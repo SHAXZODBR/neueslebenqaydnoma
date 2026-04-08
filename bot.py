@@ -306,13 +306,20 @@ async def auto_daily_report(ctx_or_app) -> None:
 # ── FastAPI Endpoints ────────────────────────────────────────────────────
 
 def _register_handlers(application):
-    admin_btn_filter = filters.ChatType.PRIVATE & (
-        filters.Text("📊 Today's Summary") | filters.Text("📥 Download Excel") |
-        filters.Text("📅 Weekly Analytics") | filters.Text("📁 Export All Data") |
-        filters.Text("⚙️ Settings / Help")
-    )
-    application.add_handler(MessageHandler(admin_btn_filter, handle_admin_buttons))
+    # Command handlers
     application.add_handler(CommandHandler("start", cmd_start))
+    application.add_handler(CommandHandler("help", cmd_help))
+    application.add_handler(CommandHandler("myid", cmd_myid))
+    application.add_handler(CommandHandler("set_admin", cmd_set_admin))
+    application.add_handler(CommandHandler("export", cmd_export))
+    application.add_handler(CommandHandler("summary", cmd_summary))
+    application.add_handler(CommandHandler("refresh_summary", cmd_refresh_summary))
+    application.add_handler(CommandHandler("weekly", cmd_weekly))
+    application.add_handler(CommandHandler("workers", cmd_workers))
+    application.add_handler(CommandHandler("groups", cmd_groups))
+    
+    # Message handlers
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("myid", cmd_myid))
     application.add_handler(CommandHandler("set_admin", cmd_set_admin))
