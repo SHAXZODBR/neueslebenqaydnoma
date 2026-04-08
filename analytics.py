@@ -8,8 +8,11 @@ import database_supabase as db
 import i18n
 
 
+def _tz() -> ZoneInfo:
+    return ZoneInfo(config.TIMEZONE)
+
 def _now() -> datetime:
-    return datetime.now(ZoneInfo(config.TIMEZONE))
+    return datetime.now(_tz())
 
 
 def _parse_ts(ts_str: str) -> datetime:
@@ -35,10 +38,11 @@ def get_worker_status(first_checkin_ts: str) -> str:
     if not schedule:
         return "✅ Present"
 
-    first_time = _parse_ts(first_checkin_ts).time()
+    first_dt = _parse_ts(first_checkin_ts)
+    first_time = first_dt.time()
     earliest = schedule[0]
     grace = timedelta(minutes=config.GRACE_PERIOD_MINUTES)
-    deadline = (datetime.combine(datetime.today(), earliest) + grace).time()
+    deadline = (datetime.combine(first_dt.date(), earliest) + grace).time()
 
     if first_time <= deadline:
         return i18n.STATUS_ON_TIME

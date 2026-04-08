@@ -110,7 +110,8 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
     for idx, c in enumerate(checkins, start=1):
         ts = datetime.fromisoformat(c["timestamp"])
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=tz)
+            ts = ts.replace(tzinfo=ZoneInfo("UTC"))
+        ts = ts.astimezone(tz)
 
         maps_url = ""
         if c.get("latitude") and c.get("longitude"):
@@ -180,10 +181,11 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
             status = get_worker_status(r["first_checkin"])
             first_t = datetime.fromisoformat(r["first_checkin"])
             last_t = datetime.fromisoformat(r["last_checkin"])
-            if first_t.tzinfo is None:
-                first_t = first_t.replace(tzinfo=tz)
-            if last_t.tzinfo is None:
-                last_t = last_t.replace(tzinfo=tz)
+            if first_t.tzinfo is None: first_t = first_t.replace(tzinfo=ZoneInfo("UTC"))
+            if last_t.tzinfo is None: last_t = last_t.replace(tzinfo=ZoneInfo("UTC"))
+            
+            first_t = first_t.astimezone(tz)
+            last_t = last_t.astimezone(tz)
 
             ws2.append([
                 d,
