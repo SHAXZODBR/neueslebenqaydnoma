@@ -314,6 +314,10 @@ async def webhook_handler(request: Request):
     await application.process_update(update)
     return Response(status_code=200)
 
+@app.get("/api/webhook")
+async def webhook_test():
+    return {"status": "Webhook endpoint is active. Telegram should use POST."}
+
 @app.get("/api/cron")
 async def cron_handler(request: Request):
     # Verify auth token if needed: if request.headers.get("Authorization") != f"Bearer {config.CRON_SECRET}": return Response(status_code=401)
