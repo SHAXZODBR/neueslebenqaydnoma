@@ -308,8 +308,10 @@ def _register_handlers(application):
 
 @app.post("/api/webhook")
 async def webhook_handler(request: Request):
+    print("📩 Webhook received!")
     application = await get_bot_app()
     data = await request.json()
+    print(f"📦 Payload: {data.get('update_id')}")
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
     return Response(status_code=200)
