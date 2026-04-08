@@ -235,30 +235,38 @@ async def cmd_groups(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    user_id = update.effective_user.id
-    print(f"💬 Received message: '{text}' from user: {user_id}")
-    
-    is_admin = await _is_admin(user_id)
-    print(f"🛡️ Is Admin? {is_admin} (Admins list: {config.ADMIN_IDS})")
-    
-    if not is_admin: 
-        print(f"🚫 User {user_id} is NOT an admin. Ignoring.")
-        return
-    
-    mapping = {
-        i18n.BUTTON_TODAY: cmd_summary,
-        i18n.BUTTON_EXCEL: cmd_export,
-        i18n.BUTTON_WEEKLY: cmd_weekly,
-        i18n.BUTTON_EXPORT_ALL: cmd_export_all,
-        i18n.BUTTON_HELP: cmd_help
-    }
-    
-    if text in mapping:
-        print(f"🎯 Execution command for: {text}")
-        await mapping[text](update, ctx)
-    else:
-        print(f"❓ Text '{text}' not found in mapping: {list(mapping.keys())}")
+    try:
+        if not update.message or not update.message.text or not update.effective_user:
+            return
+            
+        text = update.message.text
+        user_id = update.effective_user.id
+        print(f"💬 Received message: '{text}' from user: {user_id}")
+        
+        is_admin = await _is_admin(user_id)
+        print(f"🛡️ Is Admin? {is_admin} (Admins list: {config.ADMIN_IDS})")
+        
+        if not is_admin: 
+            print(f"🚫 User {user_id} is NOT an admin. Ignoring.")
+            return
+        
+        mapping = {
+            i18n.BUTTON_TODAY: cmd_summary,
+            i18n.BUTTON_EXCEL: cmd_export,
+            i18n.BUTTON_WEEKLY: cmd_weekly,
+            i18n.BUTTON_EXPORT_ALL: cmd_export_all,
+            i18n.BUTTON_HELP: cmd_help
+        }
+        
+        if text in mapping:
+            print(f"🎯 Execution command for: {text}")
+            await mapping[text](update, ctx)
+        else:
+            print(f"❓ Text '{text}' not found in mapping: {list(mapping.keys())}")
+    except Exception as e:
+        print(f"🔥 Error in message_handler: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def handle_new_chat_members(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
