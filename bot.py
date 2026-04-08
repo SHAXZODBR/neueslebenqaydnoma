@@ -234,9 +234,18 @@ async def cmd_groups(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append(f"{i}. {g['group_name']} (`{g['group_id']}`)")
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
-async def handle_admin_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if not await _is_admin(update.effective_user.id): return
+    user_id = update.effective_user.id
+    print(f"💬 Received message: '{text}' from user: {user_id}")
+    
+    is_admin = await _is_admin(user_id)
+    print(f"🛡️ Is Admin? {is_admin} (Admins list: {config.ADMIN_IDS})")
+    
+    if not is_admin: 
+        print(f"🚫 User {user_id} is NOT an admin. Ignoring.")
+        return
+    
     mapping = {
         i18n.BUTTON_TODAY: cmd_summary,
         i18n.BUTTON_EXCEL: cmd_export,
@@ -244,7 +253,12 @@ async def handle_admin_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         i18n.BUTTON_EXPORT_ALL: cmd_export_all,
         i18n.BUTTON_HELP: cmd_help
     }
-    if text in mapping: await mapping[text](update, ctx)
+    
+    if text in mapping:
+        print(f"🎯 Execution command for: {text}")
+        await mapping[text](update, ctx)
+    else:
+        print(f"❓ Text '{text}' not found in mapping: {list(mapping.keys())}")
 
 async def handle_new_chat_members(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
