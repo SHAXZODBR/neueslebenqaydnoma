@@ -327,4 +327,8 @@ async def cron_handler(request: Request):
 
 @app.get("/")
 async def index():
-    return {"status": "Attendance Bot Cloud is running"}
+    return {
+        "status": "Attendance Bot Cloud is running",
+        "version": "1.0.3",
+        "last_update": "2026-04-08 15:10"
+    }
