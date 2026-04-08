@@ -3,10 +3,15 @@
 import config
 from supabase import create_client, Client
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional, List, Dict
 
 # Initialize Supabase client
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+
+def _now() -> datetime:
+    """Return current localized time."""
+    return datetime.now(ZoneInfo(config.TIMEZONE))
 
 def init_db() -> None:
     """
@@ -37,7 +42,7 @@ def upsert_group(group_id: int, group_name: str) -> None:
     supabase.table("groups").upsert({
         "group_id": group_id,
         "group_name": group_name,
-        "added_at": datetime.now().isoformat()
+        "added_at": _now().isoformat()
     }).execute()
 
 def upsert_worker(user_id: int, username: str, first_name: str, last_name: str) -> None:
@@ -46,7 +51,7 @@ def upsert_worker(user_id: int, username: str, first_name: str, last_name: str) 
         "username": username or "",
         "first_name": first_name or "",
         "last_name": last_name or "",
-        "first_seen": datetime.now().isoformat()
+        "first_seen": _now().isoformat()
     }).execute()
 
 # ── Check-in ─────────────────────────────────────────────────────────────
@@ -62,7 +67,7 @@ def add_checkin(
 ) -> int:
     """Insert a check-in record. Returns the row id."""
     if timestamp is None:
-        timestamp = datetime.now()
+        timestamp = _now()
     
     data = {
         "user_id": user_id,
