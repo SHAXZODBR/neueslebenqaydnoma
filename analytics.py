@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import config
 import database_supabase as db
+import i18n
 
 
 def _now() -> datetime:
@@ -40,9 +41,9 @@ def get_worker_status(first_checkin_ts: str) -> str:
     deadline = (datetime.combine(datetime.today(), earliest) + grace).time()
 
     if first_time <= deadline:
-        return "✅ On Time"
+        return i18n.STATUS_ON_TIME
     else:
-        return "⚠️ Late"
+        return i18n.STATUS_LATE
 
 
 def generate_daily_text_summary(target_date: str) -> str:
@@ -52,12 +53,12 @@ def generate_daily_text_summary(target_date: str) -> str:
     groups = db.get_all_groups()
 
     if not all_workers:
-        return f"📋 *Attendance Summary for {target_date}*\n\nNo workers registered yet."
+        return i18n.NO_WORKERS
 
     present_ids = {row["user_id"] for row in summary_rows}
     absent_workers = [w for w in all_workers if w["user_id"] not in present_ids]
 
-    lines = [f"📋 *Attendance Summary for {target_date}*\n"]
+    lines = [i18n.REPORT_TITLE.format(target_date, target_date) + "\n"]
 
     # ── Group-by-group breakdown ─────────────────────────────────────
     if groups:
@@ -84,15 +85,15 @@ def generate_daily_text_summary(target_date: str) -> str:
     late = sum(1 for r in summary_rows if "Late" in get_worker_status(r["first_checkin"]))
     absent = len(absent_workers)
 
-    lines.append(f"\n📊 *Stats*")
-    lines.append(f"  👤 Total workers: {total}")
-    lines.append(f"  ✅ Present: {present}")
-    lines.append(f"  ⚠️ Late: {late}")
-    lines.append(f"  ❌ Absent: {absent}")
+    lines.append(i18n.STATS_TITLE)
+    lines.append(f"  {i18n.TOTAL_WORKERS}: {total}")
+    lines.append(f"  {i18n.PRESENT}: {present}")
+    lines.append(f"  {i18n.LATE}: {late}")
+    lines.append(f"  {i18n.ABSENT}: {absent}")
 
     # ── Absent list ──────────────────────────────────────────────────
     if absent_workers:
-        lines.append(f"\n❌ *Absent Workers*")
+        lines.append("\n" + i18n.ABSENT_LIST_TITLE)
         for w in absent_workers:
             name = f"{w['first_name']} {w['last_name']}".strip()
             uname = f" (@{w['username']})" if w["username"] else ""

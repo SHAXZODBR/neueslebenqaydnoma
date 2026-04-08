@@ -100,9 +100,9 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
     ws1.title = "Check-ins"
 
     headers1 = [
-        "#", "Date", "Time", "Group", "Username",
-        "First Name", "Last Name", "Latitude", "Longitude",
-        "Google Maps", "Media Type", "Media Link",
+        "#", "Дата / Sana", "Время / Vaqt", "Группа / Guruh", "Юзернейм / Foydalanuvchi",
+        "Имя / Ism", "Фамилия / Familiya", "Широта / Kenglik", "Долгота / Uzunlik",
+        "Карта / Xarita", "Тип / Tur", "Ссылка / Havola",
     ]
     ws1.append(headers1)
     _style_header(ws1, len(headers1))
@@ -141,12 +141,12 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
             cell = ws1.cell(row=row_num, column=10)
             cell.hyperlink = maps_url
             cell.font = _LINK_FONT
-            cell.value = "📍 Open Map"
+            cell.value = "📍 Карта / Xarita"
         if media_url:
             cell = ws1.cell(row=row_num, column=12)
             cell.hyperlink = media_url
             cell.font = _LINK_FONT
-            cell.value = f"🔗 View {c.get('media_type', 'media').capitalize()}"
+            cell.value = "🔗 Просмотр / Ko'rish"
 
         # Borders
         for col in range(1, len(headers1) + 1):
@@ -161,8 +161,8 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
     ws2 = wb.create_sheet("Daily Summary")
 
     headers2 = [
-        "Date", "Username", "Full Name", "Group",
-        "Check-in Count", "First Check-in", "Last Check-in", "Status",
+        "Дата / Sana", "Юзернейм / Foydalanuvchi", "ФИО / To'liq ism", "Группа / Guruh",
+        "Кол-во / Soni", "Первый / Birinchi", "Последний / Oxirgi", "Статус / Holati",
     ]
     ws2.append(headers2)
     _style_header(ws2, len(headers2))
@@ -214,7 +214,7 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
                     0,
                     "—",
                     "—",
-                    "❌ Absent",
+                    "❌ Отсутствует / Kelmadi",
                 ])
                 status_cell = ws2.cell(row=row_idx, column=8)
                 status_cell.fill = _ABSENT_FILL

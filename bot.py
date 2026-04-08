@@ -22,6 +22,7 @@ from telegram.ext import (
 
 import config
 import database_supabase as db
+import i18n
 from analytics import generate_daily_text_summary, generate_weekly_stats
 from export import generate_export
 
@@ -71,9 +72,9 @@ async def _is_admin(user_id: int) -> bool:
 
 def _admin_keyboard() -> ReplyKeyboardMarkup:
     buttons = [
-        [KeyboardButton("📊 Today's Summary"), KeyboardButton("📥 Download Excel")],
-        [KeyboardButton("📅 Weekly Analytics"), KeyboardButton("📁 Export All Data")],
-        [KeyboardButton("⚙️ Settings / Help")],
+        [KeyboardButton(i18n.BUTTON_TODAY), KeyboardButton(i18n.BUTTON_EXCEL)],
+        [KeyboardButton(i18n.BUTTON_WEEKLY), KeyboardButton(i18n.BUTTON_EXPORT_ALL)],
+        [KeyboardButton(i18n.BUTTON_HELP)],
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
@@ -106,8 +107,7 @@ async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     ctx.user_data[f"last_media_{chat.id}"] = {"id": checkin_id, "time": now}
     
     await msg.reply_text(
-        f"✅ {media_type.capitalize()} received and saved!\n"
-        "📍 If you have location, send it now to link it.",
+        i18n.get_media_received(media_type) + "\n" + i18n.SEND_LOCATION,
         quote=True,
     )
 
@@ -130,11 +130,11 @@ async def handle_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         ts = datetime.fromisoformat(db_last["timestamp"]).replace(tzinfo=_tz())
         if (now - ts).total_seconds() < 300:
             db.update_checkin_location(db_last["id"], lat, lon)
-            await msg.reply_text("📍 Location linked to your recent media! ✅", quote=True)
+            await msg.reply_text(i18n.LOCATION_LINKED, quote=True)
             return
 
     db.add_checkin(user_id=user.id, group_id=chat.id, latitude=lat, longitude=lon, timestamp=now)
-    await msg.reply_text("📍 Location recorded! (No recent media found to link with)", quote=True)
+    await msg.reply_text(i18n.LOCATION_ONLY, quote=True)
 
 # ── Admin Handlers ───────────────────────────────────────────────────────
 
@@ -144,10 +144,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     is_admin = await _is_admin(user.id)
     kb = _admin_keyboard() if is_admin else None
     await update.message.reply_text(
-        "👋 *Attendance Tracking Bot (Cloud)*\n\n"
-        "Add me to your groups and workers can send their 📸 photo + 📍 location "
-        "to record attendance.\n\n" +
-        ("Use the buttons below to manage reports." if is_admin else "Use /help to see all commands."),
+        i18n.START_MESSAGE + "\n\n" +
+        (i18n.ADMIN_WELCOME if is_admin else i18n.USER_WELCOME),
         parse_mode="Markdown", reply_markup=kb,
     )
 
@@ -240,11 +238,11 @@ async def handle_admin_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     text = update.message.text
     if not await _is_admin(update.effective_user.id): return
     mapping = {
-        "📊 Today's Summary": cmd_summary,
-        "📥 Download Excel": cmd_export,
-        "📅 Weekly Analytics": cmd_weekly,
-        "📁 Export All Data": cmd_export_all,
-        "⚙️ Settings / Help": cmd_help
+        i18n.BUTTON_TODAY: cmd_summary,
+        i18n.BUTTON_EXCEL: cmd_export,
+        i18n.BUTTON_WEEKLY: cmd_weekly,
+        i18n.BUTTON_EXPORT_ALL: cmd_export_all,
+        i18n.BUTTON_HELP: cmd_help
     }
     if text in mapping: await mapping[text](update, ctx)
 
