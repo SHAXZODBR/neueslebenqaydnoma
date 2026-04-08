@@ -150,25 +150,15 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "📋 *Commands*\n\n"
-        "*Admin commands (private chat):*\n"
-        "  /export `[YYYY-MM-DD]` — Export Excel for a date\n"
-        "  /summary `[YYYY-MM-DD]` — Daily attendance summary\n"
-        "  /weekly — Weekly attendance stats\n"
-        "  /set\\_channel `ID` — Set reporting channel\n"
-        "  /refresh\\_summary — Manually send reports\n"
-        "  /myid — Get your ID\n"
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(i18n.HELP_TEXT, parse_mode="Markdown")
 
 async def cmd_myid(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(f"Your ID: `{update.effective_user.id}`", parse_mode="Markdown")
+    await update.message.reply_text(i18n.MY_ID.format(update.effective_user.id), parse_mode="Markdown")
 
 async def cmd_set_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     db.add_admin(user.id)
-    await update.message.reply_text(f"✅ Registered as admin! ID: `{user.id}`", parse_mode="Markdown")
+    await update.message.reply_text(i18n.ADMIN_REGISTERED.format(user.id), parse_mode="Markdown")
 
 async def cmd_export(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -187,7 +177,7 @@ async def cmd_export(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_export_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if not await _is_admin(user.id): return
-    await update.message.reply_text("⏳ Generating full export...")
+    await update.message.reply_text(i18n.GENERATING_FULL_EXPORT)
     checkins = db.get_all_checkins()
     filepath = generate_export(checkins, title="attendance_full_export")
     await update.message.reply_document(document=open(filepath, "rb"), filename="attendance_all.xlsx")
@@ -275,7 +265,7 @@ async def handle_new_chat_members(update: Update, ctx: ContextTypes.DEFAULT_TYPE
     for member in msg.new_chat_members:
         if member.id == bot_user.id:
             _register_group(update.effective_chat)
-            await msg.reply_text("👋 Hello! Workers can check in here by sending photo/location.")
+            await msg.reply_text(i18n.NEW_GROUP_MEMBER)
             break
 
 # ── Scheduled Jobs (Cron) ────────────────────────────────────────────────

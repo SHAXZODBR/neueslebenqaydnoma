@@ -36,10 +36,30 @@ ABSENT = "❌ Отсутствуют / Kelmaganlar"
 ABSENT_LIST_TITLE = "❌ *Отсутствующие / Kelmaganlar*"
 
 # Statuses (Bilingual for reports)
-STATUS_ON_TIME = "✅ Вовремя / Vaqtida"
-STATUS_LATE = "⚠️ Опоздал / Kechikdi"
-STATUS_PRESENT = "✅ Присутствует / Qatnashdi"
-STATUS_ABSENT = "❌ Отсутствует / Kelmadi"
+STATUS_ON_TIME = "✅ Вовремя"
+STATUS_LATE = "⚠️ Опоздал"
+STATUS_PRESENT = "✅ Присутствует"
+STATUS_ABSENT = "❌ Отсутствует"
+
+# Extended RU Strings
+HELP_TEXT = (
+    "📋 *Команды администратора:*\n\n"
+    "  /export `[ГГГГ-ММ-ДД]` — Экспорт в Excel за дату\n"
+    "  /summary `[ГГГГ-ММ-ДД]` — Текстовый отчет за день\n"
+    "  /weekly — Недельная статистика\n"
+    "  /set\\_channel `ID` — Установить канал для отчетов\n"
+    "  /refresh\\_summary — Отправить отчет сейчас\n"
+    "  /myid — Узнать свой Telegram ID\n"
+    "  /workers — Список сотрудников\n"
+    "  /groups — Список групп\n"
+)
+
+MY_ID = "Ваш ID: `{}`"
+ADMIN_REGISTERED = "✅ Вы зарегистрированы как администратор! ID: `{}`"
+NEW_GROUP_MEMBER = "👋 Здравствуйте! Здесь сотрудники могут отмечаться, отправляя фото и локацию."
+GENERATING_FULL_EXPORT = "⏳ Генерация полного экспорта всех данных..."
+EXCEL_SHEET_CHECKINS = "Все чекины"
+EXCEL_SHEET_SUMMARY = "Дневной отчет"
 
 def get_media_received(m_type: str) -> str:
     ru = "Фото" if m_type == "photo" else "Видео"

@@ -10,6 +10,7 @@ from openpyxl.utils import get_column_letter
 
 import config
 import database_supabase as db
+import i18n
 from analytics import get_worker_status
 
 
@@ -97,7 +98,7 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
 
     # ── Sheet 1: Detailed Check-ins ──────────────────────────────────
     ws1 = wb.active
-    ws1.title = "Check-ins"
+    ws1.title = i18n.EXCEL_SHEET_CHECKINS
 
     headers1 = [
         "#", "Дата", "Время", "Группа", "Юзернейм",
@@ -159,7 +160,7 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
     ws1.freeze_panes = "A2"
 
     # ── Sheet 2: Daily Summary ───────────────────────────────────────
-    ws2 = wb.create_sheet("Daily Summary")
+    ws2 = wb.create_sheet(i18n.EXCEL_SHEET_SUMMARY)
 
     headers2 = [
         "Дата", "Юзернейм", "ФИО", "Группа",
