@@ -219,3 +219,11 @@ def is_admin(user_id: int) -> bool:
 
 def add_admin(user_id: int) -> None:
     supabase.table("admins").upsert({"user_id": user_id}).execute()
+
+def get_all_admin_ids() -> List[int]:
+    """Get all admin IDs from both .env and DB."""
+    ids = set(config.ADMIN_IDS)
+    res = supabase.table("admins").select("user_id").execute()
+    for row in res.data:
+        ids.add(row["user_id"])
+    return list(ids)

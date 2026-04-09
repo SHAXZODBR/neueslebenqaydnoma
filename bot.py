@@ -157,8 +157,21 @@ async def cmd_myid(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_set_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    db.add_admin(user.id)
-    await update.message.reply_text(i18n.ADMIN_REGISTERED.format(user.id), parse_mode="Markdown")
+    # Only existing admins can add new ones
+    if not await _is_admin(user.id):
+        await update.message.reply_text("⛔ Admin only.", parse_mode="Markdown")
+        return
+        
+    if not ctx.args:
+        await update.message.reply_text("Usage: `/set_admin <telegram_id>`", parse_mode="Markdown")
+        return
+        
+    try:
+        new_admin_id = int(ctx.args[0])
+        db.add_admin(new_admin_id)
+        await update.message.reply_text(i18n.ADMIN_REGISTERED.format(new_admin_id), parse_mode="Markdown")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid ID. Please provide a numeric Telegram ID.")
 
 async def cmd_export(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -288,10 +301,18 @@ async def auto_daily_report(ctx_or_app) -> None:
                 await bot.send_document(chat_id=channel_id, document=open(filepath, "rb"), filename=f"report_{today}.xlsx")
         except Exception as e: logger.error(f"Channel error: {e}")
 
-    # Send to Admins (from env)
-    for admin_id in config.ADMIN_IDS:
-        try: await bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
-        except: pass
+    # Send to Admins (env + DB)
+    all_admins = db.get_all_admin_ids()
+    for admin_id in all_admins:
+        try:
+            await bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+            if filepath:
+                # Open again because it's a new request or bot.send_document closes it? 
+                # Better safe to open for each or read once.
+                with open(filepath, "rb") as doc:
+                    await bot.send_document(chat_id=admin_id, document=doc, filename=f"report_{today}.xlsx")
+        except:
+            pass
 
 # ── FastAPI Endpoints ────────────────────────────────────────────────────
 
