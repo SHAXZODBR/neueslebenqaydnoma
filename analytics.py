@@ -150,17 +150,6 @@ def generate_daily_text_summary(target_date: str) -> str:
     lines.append(f"\n━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
-    # ── Absent list ──────────────────────────────────────────────────
-    if absent_workers:
-        lines.append("\n" + i18n.ABSENT_LIST_TITLE)
-        for w in absent_workers:
-            name = _esc(f"{w['first_name']} {w['last_name']}".strip())
-            uname = f" (@{_esc(w['username'])})" if w["username"] else ""
-            lines.append(f"  • {name}{uname}")
-    
-    lines.append(f"\n━━━━━━━━━━━━━━━━━━")
-    return "\n".join(lines)
-
 
 def generate_weekly_stats(end_date: str) -> str:
     """Generate a weekly attendance overview ending on end_date."""
