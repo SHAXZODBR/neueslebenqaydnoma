@@ -53,6 +53,14 @@ def get_worker_status(first_checkin_ts: str) -> str:
         return i18n.STATUS_LATE
 
 
+def _esc(text: str) -> str:
+    """Escape core Markdown characters."""
+    if not text: return ""
+    for char in ['_', '*', '[', ']', '`']:
+        text = text.replace(char, f"\\{char}")
+    return text
+
+
 def generate_daily_text_summary(target_date: str) -> str:
     """Generate a formatted text summary for a given date."""
     all_workers = db.get_all_workers()
@@ -75,10 +83,10 @@ def generate_daily_text_summary(target_date: str) -> str:
             grp_rows = [r for r in summary_rows if r["group_id"] == grp["group_id"]]
             if not grp_rows:
                 continue
-            lines.append(f"📌 *{grp['group_name'] or 'Group ' + str(grp['group_id'])}*")
+            lines.append(f"📌 *{_esc(grp['group_name'] or 'Group ' + str(grp['group_id']))}*")
             for row in grp_rows:
-                name = f"{row['first_name']} {row['last_name']}".strip()
-                uname = f" (@{row['username']})" if row["username"] else ""
+                name = _esc(f"{row['first_name']} {row['last_name']}".strip())
+                uname = f" (@{_esc(row['username'])})" if row["username"] else ""
                 status = get_worker_status(row["first_checkin"])
                 first_t = _parse_ts(row["first_checkin"]).strftime("%H:%M")
                 last_t = _parse_ts(row["last_checkin"]).strftime("%H:%M")
@@ -104,8 +112,8 @@ def generate_daily_text_summary(target_date: str) -> str:
     if absent_workers:
         lines.append("\n" + i18n.ABSENT_LIST_TITLE)
         for w in absent_workers:
-            name = f"{w['first_name']} {w['last_name']}".strip()
-            uname = f" (@{w['username']})" if w["username"] else ""
+            name = _esc(f"{w['first_name']} {w['last_name']}".strip())
+            uname = f" (@{_esc(w['username'])})" if w["username"] else ""
             lines.append(f"  • {name}{uname}")
     
     lines.append(f"\n━━━━━━━━━━━━━━━━━━")
@@ -134,8 +142,8 @@ def generate_weekly_stats(end_date: str) -> str:
 
     for w in all_workers:
         uid = w["user_id"]
-        name = f"{w['first_name']} {w['last_name']}".strip()
-        uname = f" (@{w['username']})" if w["username"] else ""
+        name = _esc(f"{w['first_name']} {w['last_name']}".strip())
+        uname = f" (@{_esc(w['username'])})" if w["username"] else ""
         days_present = len(worker_days.get(uid, set()))
         lines.append(f"  • {name}{uname}: {i18n.DAYS_PRESENT.format(days_present)}")
 
