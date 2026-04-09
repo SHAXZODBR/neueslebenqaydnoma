@@ -117,7 +117,7 @@ def generate_daily_text_summary(target_date: str) -> str:
                 name = _esc(f"{stat['first_name']} {stat['last_name']}".strip())
                 uname = f" (@{_esc(stat['username'])})" if stat["username"] else ""
                 status = get_worker_status(stat["first_checkin"])
-                times_str = ", ".join([f"`{t}`" for t in sorted(list(set(stat["times"])))])
+                times_str = ", ".join([f"`{t}`" for t in sorted(stat["times"])])
                 lines.append(
                     f"  {status} *{name}*{uname} — {times_str}"
                 )
