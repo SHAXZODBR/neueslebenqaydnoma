@@ -41,6 +41,11 @@ STATUS_LATE = "⚠️ Опоздал"
 STATUS_PRESENT = "✅ Присутствует"
 STATUS_ABSENT = "❌ Отсутствует"
 
+# Check-in Details
+FIRST = "первый"
+LAST = "последний"
+DAYS_PRESENT = "{}/7 дней"
+
 # Extended RU Strings
 HELP_TEXT = (
     "📋 *Команды администратора:*\n\n"
@@ -62,5 +67,10 @@ EXCEL_SHEET_CHECKINS = "Все чекины"
 EXCEL_SHEET_SUMMARY = "Дневной отчет"
 
 def get_media_received(m_type: str) -> str:
-    ru = "Фото" if m_type == "photo" else "Видео"
+    if m_type == "photo":
+        ru = "Фото"
+    elif m_type == "video_note":
+        ru = "Видео-сообщение (кружок)"
+    else:
+        ru = "Видео"
     return MEDIA_RECEIVED.format(ru)

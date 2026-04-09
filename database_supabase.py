@@ -103,25 +103,30 @@ def get_last_checkin_without_location(user_id: int, group_id: int) -> Optional[d
 
 # ── Queries ──────────────────────────────────────────────────────────────
 
-def get_checkins_for_date(target_date: str) -> List[Dict]:
+def get_checkins_for_date(target_date: str, columns: str = "*, workers(*), groups(*)") -> List[Dict]:
     res = supabase.table("checkins") \
-        .select("*, workers(*), groups(*)") \
+        .select(columns) \
         .eq("date", target_date) \
         .order("timestamp") \
         .execute()
     
-    # Flatten the result to match the expected format
-    return _flatten_checkins(res.data)
+    # Flatten the result if usingJoined fetch
+    if columns == "*, workers(*), groups(*)":
+        return _flatten_checkins(res.data)
+    return res.data
 
-def get_checkins_for_range(start_date: str, end_date: str) -> List[Dict]:
+def get_checkins_for_range(start_date: str, end_date: str, columns: str = "*, workers(*), groups(*)") -> List[Dict]:
     res = supabase.table("checkins") \
-        .select("*, workers(*), groups(*)") \
+        .select(columns) \
         .gte("date", start_date) \
         .lte("date", end_date) \
         .order("date") \
         .order("timestamp") \
         .execute()
-    return _flatten_checkins(res.data)
+    
+    if columns == "*, workers(*), groups(*)":
+        return _flatten_checkins(res.data)
+    return res.data
 
 def get_all_checkins() -> List[Dict]:
     res = supabase.table("checkins") \

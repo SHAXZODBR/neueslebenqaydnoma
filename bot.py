@@ -90,8 +90,8 @@ async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     _register_user(user)
     _register_group(chat)
 
-    media_type = "photo" if msg.photo else "video"
-    file_id = msg.photo[-1].file_id if msg.photo else msg.video.file_id
+    media_type = "photo" if msg.photo else ("video_note" if msg.video_note else "video")
+    file_id = msg.photo[-1].file_id if msg.photo else (msg.video_note.file_id if msg.video_note else msg.video.file_id)
     now = _now()
 
     checkin_id = db.add_checkin(
@@ -319,7 +319,7 @@ def _register_handlers(application):
     application.add_handler(CommandHandler("weekly", cmd_weekly))
     application.add_handler(CommandHandler("workers", cmd_workers))
     application.add_handler(CommandHandler("groups", cmd_groups))
-    application.add_handler(MessageHandler((filters.PHOTO | filters.VIDEO) & filters.ChatType.GROUPS, handle_media))
+    application.add_handler(MessageHandler((filters.PHOTO | filters.VIDEO | filters.VIDEO_NOTE) & filters.ChatType.GROUPS, handle_media))
     application.add_handler(MessageHandler(filters.LOCATION & filters.ChatType.GROUPS, handle_location))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
 

@@ -16,10 +16,13 @@ def _now() -> datetime:
 
 
 def _parse_ts(ts_str: str) -> datetime:
-    """Parse an ISO timestamp string into a timezone-aware datetime."""
+    """Parse an ISO timestamp string into a timezone-aware datetime and convert to local."""
     dt = datetime.fromisoformat(ts_str)
+    tz = ZoneInfo(config.TIMEZONE)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=ZoneInfo(config.TIMEZONE))
+        dt = dt.replace(tzinfo=tz)
+    else:
+        dt = dt.astimezone(tz)
     return dt
 
 
@@ -80,7 +83,7 @@ def generate_daily_text_summary(target_date: str) -> str:
                 lines.append(
                     f"  {status} {name}{uname} — "
                     f"{row['checkin_count']}x "
-                    f"(first: {first_t}, last: {last_t})"
+                    f"({i18n.FIRST}: {first_t}, {i18n.LAST}: {last_t})"
                 )
 
     # ── Stats ────────────────────────────────────────────────────────
@@ -113,7 +116,8 @@ def generate_weekly_stats(end_date: str) -> str:
     start_str = start.strftime("%Y-%m-%d")
 
     all_workers = db.get_all_workers()
-    checkins = db.get_checkins_for_range(start_str, end_date)
+    # Optimization: only fetch what we need for the weekly count
+    checkins = db.get_checkins_for_range(start_str, end_date, columns="user_id, date")
 
     if not all_workers:
         return "No workers registered."
@@ -130,6 +134,6 @@ def generate_weekly_stats(end_date: str) -> str:
         name = f"{w['first_name']} {w['last_name']}".strip()
         uname = f" (@{w['username']})" if w["username"] else ""
         days_present = len(worker_days.get(uid, set()))
-        lines.append(f"  • {name}{uname}: {days_present}/7 days")
+        lines.append(f"  • {name}{uname}: {i18n.DAYS_PRESENT.format(days_present)}")
 
     return "\n".join(lines)
