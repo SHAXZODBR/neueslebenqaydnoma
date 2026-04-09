@@ -285,34 +285,58 @@ async def handle_new_chat_members(update: Update, ctx: ContextTypes.DEFAULT_TYPE
 
 async def auto_daily_report(ctx_or_app) -> None:
     """Send daily summary and Excel report."""
-    today = _now().strftime("%Y-%m-%d")
-    text = generate_daily_text_summary(today)
-    checkins = db.get_checkins_for_date(today)
-    filepath = generate_export(checkins, title=f"daily_{today}") if checkins else None
+    try:
+        today = _now().strftime("%Y-%m-%d")
+        text = generate_daily_text_summary(today)
+        checkins = db.get_checkins_for_date(today)
+        filepath = generate_export(checkins, title=f"daily_{today}") if checkins else None
 
-    bot = ctx_or_app.bot if hasattr(ctx_or_app, 'bot') else ctx_or_app.bot
-    
-    # Send to Channel
-    channel_id = db.get_report_channel()
-    if channel_id:
-        try:
-            await bot.send_message(chat_id=channel_id, text=text, parse_mode="Markdown")
-            if filepath:
-                await bot.send_document(chat_id=channel_id, document=open(filepath, "rb"), filename=f"report_{today}.xlsx")
-        except Exception as e: logger.error(f"Channel error: {e}")
+        # Fix bot retrieval logic
+        if hasattr(ctx_or_app, 'bot'):
+            bot = ctx_or_app.bot
+        elif hasattr(ctx_or_app, 'application'):
+             bot = ctx_or_app.application.bot
+        else:
+             bot = ctx_or_app
 
-    # Send to Admins (env + DB)
-    all_admins = db.get_all_admin_ids()
-    for admin_id in all_admins:
-        try:
-            await bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
-            if filepath:
-                # Open again because it's a new request or bot.send_document closes it? 
-                # Better safe to open for each or read once.
-                with open(filepath, "rb") as doc:
-                    await bot.send_document(chat_id=admin_id, document=doc, filename=f"report_{today}.xlsx")
-        except:
-            pass
+        # ── 1. Send to Channel ───────────────────────────────────────
+        channel_id = db.get_report_channel()
+        if channel_id:
+            try:
+                await bot.send_message(chat_id=channel_id, text=text, parse_mode="Markdown")
+                if filepath:
+                    with open(filepath, "rb") as doc:
+                        await bot.send_document(chat_id=channel_id, document=doc, filename=f"report_{today}.xlsx")
+            except Exception as e:
+                logger.error(f"Channel error: {e}")
+
+        # ── 2. Send to Admins (env + DB) ──────────────────────────────
+        all_admins = db.get_all_admin_ids()
+        if not all_admins:
+            return
+
+        # Optimization: read file once if we have many admins
+        doc_data = None
+        if filepath:
+            with open(filepath, "rb") as f:
+                doc_data = f.read()
+
+        async def send_to_admin(admin_id):
+            try:
+                await bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                if doc_data:
+                    await bot.send_document(chat_id=admin_id, document=doc_data, filename=f"report_{today}.xlsx")
+            except Exception as e:
+                logger.error(f"Failed to send report to admin {admin_id}: {e}")
+
+        import asyncio
+        # Send concurrently to avoid Vercel timeouts
+        await asyncio.gather(*(send_to_admin(aid) for aid in all_admins), return_exceptions=True)
+
+    except Exception as e:
+        logger.error(f"Error in auto_daily_report: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ── FastAPI Endpoints ────────────────────────────────────────────────────
 

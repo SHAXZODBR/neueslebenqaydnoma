@@ -30,10 +30,10 @@ REPORT_TITLE = "📋 *Отчет по посещаемости на {}* / *{} uc
 NO_WORKERS = "Нет зарегистрированных сотрудников. / Ro'yxatdan o'tgan xodimlar yo'q."
 STATS_TITLE = "📊 *Статистика / Statistika*"
 TOTAL_WORKERS = "👤 Всего сотрудников / Jami xodimlar"
-PRESENT = "✅ Присутствуют / Qatnashganlar"
-LATE = "⚠️ Опоздали / Kechikkanlar"
-ABSENT = "❌ Отсутствуют / Kelmaganlar"
-ABSENT_LIST_TITLE = "❌ *Отсутствующие / Kelmaganlar*"
+PRESENT = "👥 Присутствуют / Qatnashganlar"
+LATE = "🕒 Опоздали / Kechikkanlar"
+ABSENT = "🚫 Отсутствуют / Kelmaganlar"
+ABSENT_LIST_TITLE = "🚫 *Отсутствующие / Kelmaganlar*"
 
 # Statuses (Bilingual for reports)
 STATUS_ON_TIME = "✅ Вовремя"

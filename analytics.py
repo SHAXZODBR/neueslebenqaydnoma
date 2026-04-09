@@ -65,7 +65,9 @@ def generate_daily_text_summary(target_date: str) -> str:
     present_ids = {row["user_id"] for row in summary_rows}
     absent_workers = [w for w in all_workers if w["user_id"] not in present_ids]
 
-    lines = [i18n.REPORT_TITLE.format(target_date, target_date) + "\n"]
+    lines = [f"━━━━━━━━━━━━━━━━━━"]
+    lines.append(i18n.REPORT_TITLE.format(target_date, target_date))
+    lines.append(f"━━━━━━━━━━━━━━━━━━\n")
 
     # ── Group-by-group breakdown ─────────────────────────────────────
     if groups:
@@ -73,7 +75,7 @@ def generate_daily_text_summary(target_date: str) -> str:
             grp_rows = [r for r in summary_rows if r["group_id"] == grp["group_id"]]
             if not grp_rows:
                 continue
-            lines.append(f"\n📌 *{grp['group_name'] or 'Group ' + str(grp['group_id'])}*")
+            lines.append(f"📌 *{grp['group_name'] or 'Group ' + str(grp['group_id'])}*")
             for row in grp_rows:
                 name = f"{row['first_name']} {row['last_name']}".strip()
                 uname = f" (@{row['username']})" if row["username"] else ""
@@ -81,9 +83,9 @@ def generate_daily_text_summary(target_date: str) -> str:
                 first_t = _parse_ts(row["first_checkin"]).strftime("%H:%M")
                 last_t = _parse_ts(row["last_checkin"]).strftime("%H:%M")
                 lines.append(
-                    f"  {status} {name}{uname} — "
-                    f"{row['checkin_count']}x "
-                    f"({i18n.FIRST}: {first_t}, {i18n.LAST}: {last_t})"
+                    f"  {status} *{name}*{uname} — "
+                    f"`{row['checkin_count']}x` "
+                    f"({i18n.FIRST}: `{first_t}`, {i18n.LAST}: `{last_t}`)"
                 )
 
     # ── Stats ────────────────────────────────────────────────────────
@@ -92,11 +94,11 @@ def generate_daily_text_summary(target_date: str) -> str:
     late = sum(1 for r in summary_rows if "Late" in get_worker_status(r["first_checkin"]))
     absent = len(absent_workers)
 
-    lines.append(i18n.STATS_TITLE)
-    lines.append(f"  {i18n.TOTAL_WORKERS}: {total}")
-    lines.append(f"  {i18n.PRESENT}: {present}")
-    lines.append(f"  {i18n.LATE}: {late}")
-    lines.append(f"  {i18n.ABSENT}: {absent}")
+    lines.append(f"\n" + i18n.STATS_TITLE)
+    lines.append(f"  {i18n.TOTAL_WORKERS}: *{total}*")
+    lines.append(f"  {i18n.PRESENT}: *{present}*")
+    lines.append(f"  {i18n.LATE}: *{late}*")
+    lines.append(f"  {i18n.ABSENT}: *{absent}*")
 
     # ── Absent list ──────────────────────────────────────────────────
     if absent_workers:
@@ -105,7 +107,8 @@ def generate_daily_text_summary(target_date: str) -> str:
             name = f"{w['first_name']} {w['last_name']}".strip()
             uname = f" (@{w['username']})" if w["username"] else ""
             lines.append(f"  • {name}{uname}")
-
+    
+    lines.append(f"\n━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
 
