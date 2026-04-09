@@ -282,6 +282,28 @@ async def handle_new_chat_members(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             await msg.reply_text(i18n.NEW_GROUP_MEMBER)
             break
 
+async def send_long_message(bot, chat_id, text, **kwargs):
+    """Split and send message if it exceeds Telegram's 4096 char limit."""
+    if len(text) <= 4000:
+        return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
+    
+    parts = []
+    tmp_text = text
+    while tmp_text:
+        if len(tmp_text) <= 4000:
+            parts.append(tmp_text)
+            break
+        # Try to split at a newline
+        split_at = tmp_text.rfind('\n', 0, 4000)
+        if split_at == -1:
+            split_at = 4000
+        parts.append(tmp_text[:split_at])
+        tmp_text = tmp_text[split_at:].lstrip()
+    
+    for p in parts:
+        await bot.send_message(chat_id=chat_id, text=p, **kwargs)
+
+
 # ── Scheduled Jobs (Cron) ────────────────────────────────────────────────
 
 async def auto_daily_report(ctx_or_app) -> None:
