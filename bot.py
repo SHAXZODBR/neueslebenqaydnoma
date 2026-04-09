@@ -91,10 +91,22 @@ async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     _register_user(user)
     _register_group(chat)
 
-    media_type = "photo" if msg.photo else ("video_note" if msg.video_note else "video")
-    file_id = msg.photo[-1].file_id if msg.photo else (msg.video_note.file_id if msg.video_note else msg.video.file_id)
-    now = _now()
+    if msg.photo:
+        media_type = "photo"
+        file_id = msg.photo[-1].file_id
+    elif msg.video_note:
+        media_type = "video_note"
+        file_id = msg.video_note.file_id
+    elif msg.video:
+        media_type = "video"
+        file_id = msg.video.file_id
+    elif msg.document:
+        media_type = "photo" # Treat as photo for logic
+        file_id = msg.document.file_id
+    else:
+        return
 
+    now = _now()
     checkin_id = db.add_checkin(
         user_id=user.id,
         group_id=chat.id,
@@ -103,8 +115,7 @@ async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         timestamp=now,
     )
     
-    # Store in user_data for location linking (persists across webhook calls if using a persistence layer, 
-    # but for serverless we rely on the 5-min window and DB fallback)
+    # Store in user_data for location linking
     ctx.user_data[f"last_media_{chat.id}"] = {"id": checkin_id, "time": now}
     
     await msg.reply_text(
@@ -395,7 +406,7 @@ def _register_handlers(application):
     application.add_handler(CommandHandler("weekly", cmd_weekly))
     application.add_handler(CommandHandler("workers", cmd_workers))
     application.add_handler(CommandHandler("groups", cmd_groups))
-    application.add_handler(MessageHandler((filters.PHOTO | filters.VIDEO | filters.VIDEO_NOTE) & filters.ChatType.GROUPS, handle_media))
+    application.add_handler(MessageHandler((filters.PHOTO | filters.VIDEO | filters.VIDEO_NOTE | filters.Document.IMAGE | filters.Document.VIDEO) & filters.ChatType.GROUPS, handle_media))
     application.add_handler(MessageHandler(filters.LOCATION & filters.ChatType.GROUPS, handle_location))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
 
