@@ -200,12 +200,12 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
     target_date = ctx.args[0] if ctx.args else _now().strftime("%Y-%m-%d")
     text = generate_daily_text_summary(target_date)
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await send_long_message(ctx.bot, update.effective_chat.id, text, parse_mode="Markdown")
 
 async def cmd_weekly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
     text = generate_weekly_stats(_now().strftime("%Y-%m-%d"))
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await send_long_message(ctx.bot, update.effective_chat.id, text, parse_mode="Markdown")
 
 async def cmd_set_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
@@ -308,7 +308,7 @@ async def auto_daily_report(ctx_or_app) -> None:
         if channel_id:
             logger.info(f"Sending report to channel {channel_id}...")
             try:
-                await bot.send_message(chat_id=channel_id, text=text, parse_mode="Markdown")
+                await send_long_message(bot, chat_id=channel_id, text=text, parse_mode="Markdown")
                 if filepath:
                     with open(filepath, "rb") as doc:
                         await bot.send_document(chat_id=channel_id, document=doc, filename=f"report_{today}.xlsx")
@@ -327,7 +327,7 @@ async def auto_daily_report(ctx_or_app) -> None:
         async def send_to_admin(admin_id):
             try:
                 # Use a timeout for each individual send to prevent one slow admin from hanging everything
-                await asyncio.wait_for(bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown"), timeout=15)
+                await asyncio.wait_for(send_long_message(bot, chat_id=admin_id, text=text, parse_mode="Markdown"), timeout=30)
                 if doc_data:
                     await asyncio.wait_for(bot.send_document(chat_id=admin_id, document=doc_data, filename=f"report_{today}.xlsx"), timeout=30)
             except Exception as e:

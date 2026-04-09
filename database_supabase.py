@@ -137,6 +137,7 @@ def get_all_checkins() -> List[Dict]:
     return _flatten_checkins(res.data)
 
 def _flatten_checkins(data: List[Dict]) -> List[Dict]:
+    if not data: return []
     flattened = []
     for item in data:
         worker = item.get("workers", {})
@@ -206,6 +207,7 @@ def get_daily_summary(target_date: str) -> List[Dict]:
 
 def get_unique_dates() -> List[str]:
     res = supabase.table("checkins").select("date").execute()
+    if not res.data: return []
     dates = sorted(list(set(item["date"] for item in res.data)))
     return dates
 
