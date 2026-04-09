@@ -5,6 +5,7 @@ This version runs on Vercel and uses Webhooks for real-time updates
 and Vercel Cron for daily automated reports.
 """
 
+import asyncio
 import logging
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -285,23 +286,27 @@ async def handle_new_chat_members(update: Update, ctx: ContextTypes.DEFAULT_TYPE
 
 async def auto_daily_report(ctx_or_app) -> None:
     """Send daily summary and Excel report."""
+    logger.info("Starting auto_daily_report...")
     try:
         today = _now().strftime("%Y-%m-%d")
         text = generate_daily_text_summary(today)
         checkins = db.get_checkins_for_date(today)
         filepath = generate_export(checkins, title=f"daily_{today}") if checkins else None
 
-        # Fix bot retrieval logic
+        # Robust bot retrieval
         if hasattr(ctx_or_app, 'bot'):
             bot = ctx_or_app.bot
         elif hasattr(ctx_or_app, 'application'):
-             bot = ctx_or_app.application.bot
+            bot = ctx_or_app.application.bot
         else:
-             bot = ctx_or_app
+            bot = ctx_or_app
+            
+        logger.info(f"Report generated. Length: {len(text)}. Target date: {today}")
 
         # ── 1. Send to Channel ───────────────────────────────────────
         channel_id = db.get_report_channel()
         if channel_id:
+            logger.info(f"Sending report to channel {channel_id}...")
             try:
                 await bot.send_message(chat_id=channel_id, text=text, parse_mode="Markdown")
                 if filepath:
@@ -312,10 +317,8 @@ async def auto_daily_report(ctx_or_app) -> None:
 
         # ── 2. Send to Admins (env + DB) ──────────────────────────────
         all_admins = db.get_all_admin_ids()
-        if not all_admins:
-            return
-
-        # Optimization: read file once if we have many admins
+        logger.info(f"Sending report to {len(all_admins)} admins...")
+        
         doc_data = None
         if filepath:
             with open(filepath, "rb") as f:
@@ -323,18 +326,24 @@ async def auto_daily_report(ctx_or_app) -> None:
 
         async def send_to_admin(admin_id):
             try:
-                await bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown")
+                # Use a timeout for each individual send to prevent one slow admin from hanging everything
+                await asyncio.wait_for(bot.send_message(chat_id=admin_id, text=text, parse_mode="Markdown"), timeout=15)
                 if doc_data:
-                    await bot.send_document(chat_id=admin_id, document=doc_data, filename=f"report_{today}.xlsx")
+                    await asyncio.wait_for(bot.send_document(chat_id=admin_id, document=doc_data, filename=f"report_{today}.xlsx"), timeout=30)
             except Exception as e:
-                logger.error(f"Failed to send report to admin {admin_id}: {e}")
+                logger.error(f"Failed to send to admin {admin_id}: {e}")
 
-        import asyncio
-        # Send concurrently to avoid Vercel timeouts
-        await asyncio.gather(*(send_to_admin(aid) for aid in all_admins), return_exceptions=True)
+        if all_admins:
+            # Send concurrently but with an overall timeout
+            await asyncio.wait_for(
+                asyncio.gather(*(send_to_admin(aid) for aid in all_admins), return_exceptions=True),
+                timeout=60
+            )
+
+        logger.info("auto_daily_report finished successfully.")
 
     except Exception as e:
-        logger.error(f"Error in auto_daily_report: {e}")
+        logger.error(f"Fatal error in auto_daily_report: {e}")
         import traceback
         traceback.print_exc()
 
