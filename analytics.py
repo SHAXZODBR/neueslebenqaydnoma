@@ -62,7 +62,7 @@ def _esc(text: str) -> str:
 
 
 def generate_daily_text_summary(target_date: str) -> str:
-    """Generate a formatted text summary for a given date, showing all check-in times."""
+    """Generate a formatted text summary for a given date, showing optimized check-in times."""
     all_workers = db.get_all_workers()
     all_checkins = db.get_checkins_for_date(target_date)
     groups = db.get_all_groups()
@@ -71,7 +71,6 @@ def generate_daily_text_summary(target_date: str) -> str:
         return i18n.NO_WORKERS
 
     # Group check-ins by (group_id, user_id)
-    # Use a dictionary to store worker details and a list of their check-in times
     worker_stats = {}
     present_ids = set()
     
@@ -80,8 +79,8 @@ def generate_daily_text_summary(target_date: str) -> str:
         uid = c["user_id"]
         present_ids.add(uid)
         
-        # Parse time and format
-        t_str = _parse_ts(c["timestamp"]).strftime("%H:%M")
+        t_dt = _parse_ts(c["timestamp"])
+        t_str = t_dt.strftime("%H:%M")
         
         key = (gid, uid)
         if key not in worker_stats:
@@ -94,14 +93,17 @@ def generate_daily_text_summary(target_date: str) -> str:
                 "times": []
             }
         worker_stats[key]["times"].append(t_str)
-        # Ensure first_checkin for status check (earliest)
         if "first_checkin" not in worker_stats[key] or c["timestamp"] < worker_stats[key]["first_checkin"]:
             worker_stats[key]["first_checkin"] = c["timestamp"]
 
-    absent_workers = [w for w in all_workers if w["user_id"] not in present_ids]
+    # Enhanced timestamps display logic
+    def format_times(times: list[str]) -> str:
+        s_times = sorted(list(set(times)))
+        if len(s_times) <= 3:
+            return ", ".join([f"`{t}`" for t in s_times])
+        return f"`{s_times[0]}` ... `{s_times[-1]}` ({len(s_times)} раз/marta)"
 
-    lines = [f"━━━━━━━━━━━━━━━━━━"]
-    lines.append(i18n.REPORT_TITLE.format(target_date, target_date))
+    lines = [i18n.REPORT_TITLE.format(target_date, target_date)]
     lines.append(f"━━━━━━━━━━━━━━━━━━\n")
 
     # ── Group-by-group breakdown ─────────────────────────────────────
@@ -112,40 +114,45 @@ def generate_daily_text_summary(target_date: str) -> str:
             if not grp_stats:
                 continue
             
-            lines.append(f"📌 *{_esc(grp['group_name'] or 'Group ' + str(gid))}*")
+            lines.append(f"🏘 *{_esc(grp['group_name'] or 'Группа')}*")
             for stat in grp_stats:
                 name = _esc(f"{stat['first_name']} {stat['last_name']}".strip())
                 uname = f" (@{_esc(stat['username'])})" if stat["username"] else ""
                 status = get_worker_status(stat["first_checkin"])
-                times_str = ", ".join([f"`{t}`" for t in sorted(stat["times"])])
-                lines.append(
-                    f"  {status} *{name}*{uname} — {times_str}"
-                )
+                times_str = format_times(stat["times"])
+                lines.append(f"  {status} *{name}*{uname}\n     └─ {times_str}")
+            lines.append("")
 
-    # ── Stats ────────────────────────────────────────────────────────
+    # ── Stats Summary ───────────────────────────────────────────────
     total = len(all_workers)
     present = len(present_ids)
-    # Late check logic: use the earliest check-in for each present worker
-    late_count = 0
-    for stat in worker_stats.values():
-        if "Late" in get_worker_status(stat["first_checkin"]):
-            late_count += 1
-    
-    absent = len(absent_workers)
+    late_count = sum(1 for s in worker_stats.values() if i18n.STATUS_LATE in get_worker_status(s["first_checkin"]))
+    absent_count = total - present
 
-    lines.append(f"\n" + i18n.STATS_TITLE)
-    lines.append(f"  {i18n.TOTAL_WORKERS}: *{total}*")
-    lines.append(f"  {i18n.PRESENT}: *{present}*")
-    lines.append(f"  {i18n.LATE}: *{late_count}*")
-    lines.append(f"  {i18n.ABSENT}: *{absent}*")
+    lines.append(f"{i18n.STATS_TITLE}")
+    lines.append(f"  {i18n.TOTAL_WORKERS}: `{total}`")
+    lines.append(f"  {i18n.PRESENT}: `{present}`")
+    lines.append(f"  {i18n.LATE}: `{late_count}`")
+    lines.append(f"  {i18n.ABSENT}: `{absent_count}`\n")
 
-    # ── Absent list ──────────────────────────────────────────────────
+    # ── Detailed Absent List ─────────────────────────────────────────
+    absent_workers = [w for w in all_workers if w["user_id"] not in present_ids]
     if absent_workers:
-        lines.append("\n" + i18n.ABSENT_LIST_TITLE)
+        lines.append(f"{i18n.ABSENT_LIST_TITLE}")
+        
+        # Group absents by last known group
+        last_groups = db.get_workers_last_groups()
+        absents_by_group = {}
         for w in absent_workers:
-            name = _esc(f"{w['first_name']} {w['last_name']}".strip())
-            uname = f" (@{_esc(w['username'])})" if w["username"] else ""
-            lines.append(f"  • {name}{uname}")
+            grp_name = last_groups.get(w["user_id"], "Новички / Новые")
+            absents_by_group.setdefault(grp_name, []).append(w)
+            
+        for grp_name, workers in sorted(absents_by_group.items()):
+            lines.append(f"  📍 *{_esc(grp_name)}*")
+            for w in workers:
+                name = _esc(f"{w['first_name']} {w['last_name']}".strip())
+                uname = f" (@{_esc(w['username'])})" if w["username"] else ""
+                lines.append(f"    • {name}{uname}")
     
     lines.append(f"\n━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)

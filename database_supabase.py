@@ -51,7 +51,7 @@ def upsert_worker(user_id: int, username: str, first_name: str, last_name: str) 
         "username": username or "",
         "first_name": first_name or "",
         "last_name": last_name or "",
-        "first_seen": _now().isoformat()
+        # "first_seen" removed so it's only set by DB default on INSERT
     }).execute()
 
 # ── Check-in ─────────────────────────────────────────────────────────────
@@ -210,6 +210,21 @@ def get_unique_dates() -> List[str]:
     if not res.data: return []
     dates = sorted(list(set(item["date"] for item in res.data)))
     return dates
+
+def get_workers_last_groups() -> Dict[int, str]:
+    """Get a mapping of user_id -> last group name they checked into."""
+    res = supabase.table("checkins") \
+        .select("user_id, group_id, groups(group_name)") \
+        .order("timestamp", desc=True) \
+        .execute()
+    
+    mapping = {}
+    for item in res.data:
+        uid = item["user_id"]
+        if uid not in mapping:
+            grp = item.get("groups", {})
+            mapping[uid] = grp.get("group_name", "Unknown Group")
+    return mapping
 
 # ── Admin management ─────────────────────────────────────────────────────
 

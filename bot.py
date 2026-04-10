@@ -136,13 +136,26 @@ async def handle_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
     now = _now()
     lat, lon = msg.location.latitude, msg.location.longitude
 
-    # Fallback: check DB for any record without location in last 5 min
+    # 1. Fallback: check DB for any record without location in last 5 min (likely just sent a photo)
     db_last = db.get_last_checkin_without_location(user.id, chat.id)
     if db_last:
         ts = datetime.fromisoformat(db_last["timestamp"]).replace(tzinfo=_tz())
         if (now - ts).total_seconds() < 300:
             db.update_checkin_location(db_last["id"], lat, lon)
             await msg.reply_text(i18n.LOCATION_LINKED, quote=True)
+            return
+
+    # 2. Prevent duplicate "Location Only" messages and records (e.g. from Live Location updates)
+    # Check if we already have a location record in the last 2 minutes
+    # If so, just update it quietly instead of spamming "Location Saved"
+    all_recent = db.get_checkins_for_date(now.strftime("%Y-%m-%d"))
+    recent_loc = [c for c in all_recent if c["user_id"] == user.id and c["group_id"] == chat.id]
+    if recent_loc:
+        last_rec = recent_loc[-1]
+        last_ts = datetime.fromisoformat(last_rec["timestamp"]).replace(tzinfo=_tz())
+        if (now - last_ts).total_seconds() < 120: # 2 minutes debounce
+            db.update_checkin_location(last_rec["id"], lat, lon)
+            # No message sent to avoid spam
             return
 
     db.add_checkin(user_id=user.id, group_id=chat.id, latitude=lat, longitude=lon, timestamp=now)
