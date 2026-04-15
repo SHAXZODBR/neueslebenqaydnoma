@@ -80,7 +80,7 @@ def generate_daily_text_summary(target_date: str) -> str:
         present_ids.add(uid)
         
         t_dt = _parse_ts(c["timestamp"])
-        t_str = t_dt.strftime("%H:%M")
+        t_str = t_dt.strftime("%H:%M:%S")
         
         key = (gid, uid)
         if key not in worker_stats:
@@ -96,12 +96,10 @@ def generate_daily_text_summary(target_date: str) -> str:
         if "first_checkin" not in worker_stats[key] or c["timestamp"] < worker_stats[key]["first_checkin"]:
             worker_stats[key]["first_checkin"] = c["timestamp"]
 
-    # Enhanced timestamps display logic
+    # Show ALL submission times — never drop, truncate, or deduplicate
     def format_times(times: list[str]) -> str:
-        s_times = sorted(list(set(times)))
-        if len(s_times) <= 3:
-            return ", ".join([f"`{t}`" for t in s_times])
-        return f"`{s_times[0]}` ... `{s_times[-1]}` ({len(s_times)} раз/marta)"
+        s_times = sorted(times)  # keep duplicates — each file = separate time
+        return ", ".join([f"`{t}`" for t in s_times])
 
     lines = [i18n.REPORT_TITLE.format(target_date, target_date)]
     lines.append(f"━━━━━━━━━━━━━━━━━━\n")

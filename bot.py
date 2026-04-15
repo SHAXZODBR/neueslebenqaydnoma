@@ -396,7 +396,7 @@ async def auto_daily_report(ctx_or_app) -> None:
 # ── FastAPI Endpoints ────────────────────────────────────────────────────
 
 def _register_handlers(application):
-    # Command handlers
+    # Command handlers — registered ONCE only
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("myid", cmd_myid))
@@ -407,18 +407,10 @@ def _register_handlers(application):
     application.add_handler(CommandHandler("weekly", cmd_weekly))
     application.add_handler(CommandHandler("workers", cmd_workers))
     application.add_handler(CommandHandler("groups", cmd_groups))
-    
-    # Message handlers
+    application.add_handler(CommandHandler("set_channel", cmd_set_channel))  # ← was missing!
+
+    # Message + media handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-    application.add_handler(CommandHandler("help", cmd_help))
-    application.add_handler(CommandHandler("myid", cmd_myid))
-    application.add_handler(CommandHandler("set_admin", cmd_set_admin))
-    application.add_handler(CommandHandler("export", cmd_export))
-    application.add_handler(CommandHandler("summary", cmd_summary))
-    application.add_handler(CommandHandler("refresh_summary", cmd_refresh_summary))
-    application.add_handler(CommandHandler("weekly", cmd_weekly))
-    application.add_handler(CommandHandler("workers", cmd_workers))
-    application.add_handler(CommandHandler("groups", cmd_groups))
     application.add_handler(MessageHandler((filters.PHOTO | filters.VIDEO | filters.VIDEO_NOTE | filters.Document.IMAGE | filters.Document.VIDEO) & filters.ChatType.GROUPS, handle_media))
     application.add_handler(MessageHandler(filters.LOCATION & filters.ChatType.GROUPS, handle_location))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))

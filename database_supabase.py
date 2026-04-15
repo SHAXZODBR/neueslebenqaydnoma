@@ -9,6 +9,26 @@ from typing import Optional, List, Dict
 # Initialize Supabase client
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
 
+_PAGE_SIZE = 1000  # Supabase default row limit
+
+def _fetch_all(query) -> List[Dict]:
+    """Paginate through a Supabase query to fetch ALL rows.
+    
+    Supabase returns at most 1000 rows per request by default.
+    This helper fetches page by page until all data is retrieved.
+    """
+    all_data = []
+    offset = 0
+    while True:
+        page = query.range(offset, offset + _PAGE_SIZE - 1).execute()
+        if not page.data:
+            break
+        all_data.extend(page.data)
+        if len(page.data) < _PAGE_SIZE:
+            break  # Last page
+        offset += _PAGE_SIZE
+    return all_data
+
 def _now() -> datetime:
     """Return current localized time."""
     return datetime.now(ZoneInfo(config.TIMEZONE))
@@ -104,37 +124,37 @@ def get_last_checkin_without_location(user_id: int, group_id: int) -> Optional[d
 # ── Queries ──────────────────────────────────────────────────────────────
 
 def get_checkins_for_date(target_date: str, columns: str = "*, workers(*), groups(*)") -> List[Dict]:
-    res = supabase.table("checkins") \
+    query = supabase.table("checkins") \
         .select(columns) \
         .eq("date", target_date) \
-        .order("timestamp") \
-        .execute()
+        .order("timestamp")
+    data = _fetch_all(query)
     
-    # Flatten the result if usingJoined fetch
+    # Flatten the result if using joined fetch
     if columns == "*, workers(*), groups(*)":
-        return _flatten_checkins(res.data)
-    return res.data
+        return _flatten_checkins(data)
+    return data
 
 def get_checkins_for_range(start_date: str, end_date: str, columns: str = "*, workers(*), groups(*)") -> List[Dict]:
-    res = supabase.table("checkins") \
+    query = supabase.table("checkins") \
         .select(columns) \
         .gte("date", start_date) \
         .lte("date", end_date) \
         .order("date") \
-        .order("timestamp") \
-        .execute()
+        .order("timestamp")
+    data = _fetch_all(query)
     
     if columns == "*, workers(*), groups(*)":
-        return _flatten_checkins(res.data)
-    return res.data
+        return _flatten_checkins(data)
+    return data
 
 def get_all_checkins() -> List[Dict]:
-    res = supabase.table("checkins") \
+    query = supabase.table("checkins") \
         .select("*, workers(*), groups(*)") \
         .order("date") \
-        .order("timestamp") \
-        .execute()
-    return _flatten_checkins(res.data)
+        .order("timestamp")
+    data = _fetch_all(query)
+    return _flatten_checkins(data)
 
 def _flatten_checkins(data: List[Dict]) -> List[Dict]:
     if not data: return []
@@ -213,13 +233,13 @@ def get_unique_dates() -> List[str]:
 
 def get_workers_last_groups() -> Dict[int, str]:
     """Get a mapping of user_id -> last group name they checked into."""
-    res = supabase.table("checkins") \
+    query = supabase.table("checkins") \
         .select("user_id, group_id, groups(group_name)") \
-        .order("timestamp", desc=True) \
-        .execute()
+        .order("timestamp", desc=True)
+    data = _fetch_all(query)
     
     mapping = {}
-    for item in res.data:
+    for item in data:
         uid = item["user_id"]
         if uid not in mapping:
             grp = item.get("groups", {})
