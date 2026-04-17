@@ -64,7 +64,9 @@ def _esc(text: str) -> str:
 def generate_daily_text_summary(target_date: str) -> str:
     """Generate a formatted text summary for a given date, showing optimized check-in times."""
     all_workers = db.get_all_workers()
-    all_checkins = db.get_checkins_for_date(target_date)
+    all_checkins_raw = db.get_checkins_for_date(target_date)
+    # ONLY file submissions — exclude location-only, text, chat join entries
+    all_checkins = [c for c in all_checkins_raw if c.get("media_file_id")]
     groups = db.get_all_groups()
 
     if not all_workers:
@@ -80,7 +82,7 @@ def generate_daily_text_summary(target_date: str) -> str:
         present_ids.add(uid)
         
         t_dt = _parse_ts(c["timestamp"])
-        t_str = t_dt.strftime("%H:%M:%S")
+        t_str = t_dt.strftime("%H:%M")
         
         key = (gid, uid)
         if key not in worker_stats:
@@ -96,9 +98,9 @@ def generate_daily_text_summary(target_date: str) -> str:
         if "first_checkin" not in worker_stats[key] or c["timestamp"] < worker_stats[key]["first_checkin"]:
             worker_stats[key]["first_checkin"] = c["timestamp"]
 
-    # Show ALL submission times — never drop, truncate, or deduplicate
+    # Deduplicate timestamps in the same minute for a cleaner report
     def format_times(times: list[str]) -> str:
-        s_times = sorted(times)  # keep duplicates — each file = separate time
+        s_times = sorted(list(set(times)))  # Deduplicate: each unique minute once
         return ", ".join([f"`{t}`" for t in s_times])
 
     lines = [i18n.REPORT_TITLE.format(target_date, target_date)]

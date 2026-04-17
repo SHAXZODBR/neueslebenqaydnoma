@@ -187,8 +187,9 @@ def get_worker_checkin_count(user_id: int, target_date: str) -> int:
 
 def get_daily_summary(target_date: str) -> List[Dict]:
     """Get per-worker summary for a date: count, first/last check-in."""
-    # Fetch all checkins for the date with related data
-    checkins = get_checkins_for_date(target_date)
+    # Fetch all checkins for the date with related data — only file submissions
+    all_checkins = get_checkins_for_date(target_date)
+    checkins = [c for c in all_checkins if c.get("media_file_id")]
     
     if not checkins:
         return []

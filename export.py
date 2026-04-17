@@ -94,6 +94,9 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
     os.makedirs(config.EXPORTS_DIR, exist_ok=True)
     tz = ZoneInfo(config.TIMEZONE)
 
+    # Only export file submissions (exclude location-only entries)
+    checkins = [c for c in checkins if c.get("media_file_id")]
+
     wb = Workbook()
 
     # ── Sheet 1: Detailed Check-ins ──────────────────────────────────
@@ -126,7 +129,7 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
         ws1.append([
             idx,
             ts.strftime("%Y-%m-%d"),
-            ts.strftime("%H:%M:%S"),
+            ts.strftime("%H:%M"),
             c.get("group_name", ""),
             c.get("username", ""),
             c.get("first_name", ""),
@@ -194,8 +197,8 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
                 f"{r.get('first_name', '')} {r.get('last_name', '')}".strip(),
                 r.get("group_name", ""),
                 r["checkin_count"],
-                first_t.strftime("%H:%M:%S"),
-                last_t.strftime("%H:%M:%S"),
+                first_t.strftime("%H:%M"),
+                last_t.strftime("%H:%M"),
                 status,
             ])
             # Color the status cell
