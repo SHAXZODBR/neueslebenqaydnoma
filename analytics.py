@@ -159,30 +159,62 @@ def generate_daily_text_summary(target_date: str) -> str:
 
 
 def generate_weekly_stats(end_date: str) -> str:
-    """Generate a weekly attendance overview ending on end_date."""
+    """Generate a weekly attendance overview ending on end_date.
+
+    Shows, for each worker, the per-day status across the 7-day window,
+    including which group they checked in to on each present day.
+    """
     end = datetime.strptime(end_date, "%Y-%m-%d")
     start = end - timedelta(days=6)
     start_str = start.strftime("%Y-%m-%d")
 
     all_workers = db.get_all_workers()
-    # Optimization: only fetch what we need for the weekly count
-    checkins = db.get_checkins_for_range(start_str, end_date, columns="user_id, date")
+    # Pull full info so we can show group + date breakdown (file submissions only)
+    checkins_raw = db.get_checkins_for_range(start_str, end_date)
+    checkins = [c for c in checkins_raw if c.get("media_file_id")]
 
     if not all_workers:
-        return "No workers registered."
+        return i18n.NO_WORKERS
 
-    # Build per-worker stats
-    worker_days: dict[int, set[str]] = {}
+    # All 7 dates in the window (chronological)
+    week_dates = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+
+    # Per-worker map: date -> set of group names checked in to that day
+    worker_day_groups: dict[int, dict[str, set[str]]] = {}
     for c in checkins:
-        worker_days.setdefault(c["user_id"], set()).add(c["date"])
+        uid = c["user_id"]
+        d = c["date"]
+        gname = c.get("group_name") or "—"
+        worker_day_groups.setdefault(uid, {}).setdefault(d, set()).add(gname)
 
-    lines = [f"📊 *Weekly Report: {start_str} → {end_date}*\n"]
-
+    # Group workers by last known group, like the daily report
+    last_groups = db.get_workers_last_groups()
+    workers_by_group: dict[str, list[dict]] = {}
     for w in all_workers:
-        uid = w["user_id"]
-        name = _esc(f"{w['first_name']} {w['last_name']}".strip())
-        uname = f" (@{_esc(w['username'])})" if w["username"] else ""
-        days_present = len(worker_days.get(uid, set()))
-        lines.append(f"  • {name}{uname}: {i18n.DAYS_PRESENT.format(days_present)}")
+        grp_name = last_groups.get(w["user_id"], "Новички / Новые")
+        workers_by_group.setdefault(grp_name, []).append(w)
 
+    lines = [f"📊 *Weekly Report: {start_str} → {end_date}*"]
+    lines.append("━━━━━━━━━━━━━━━━━━\n")
+
+    for grp_name in sorted(workers_by_group.keys()):
+        lines.append(f"🏘 *{_esc(grp_name)}*")
+        for w in sorted(workers_by_group[grp_name], key=lambda x: (x.get("first_name") or "", x.get("last_name") or "")):
+            uid = w["user_id"]
+            name = _esc(f"{w['first_name']} {w['last_name']}".strip())
+            uname = f" (@{_esc(w['username'])})" if w["username"] else ""
+            day_map = worker_day_groups.get(uid, {})
+            days_present = len(day_map)
+
+            lines.append(f"  • *{name}*{uname} — {i18n.DAYS_PRESENT.format(days_present)}")
+            for d in week_dates:
+                short = datetime.strptime(d, "%Y-%m-%d").strftime("%d.%m %a")
+                if d in day_map:
+                    grps = ", ".join(_esc(g) for g in sorted(day_map[d]))
+                    lines.append(f"     ✅ `{short}` — {grps}")
+                else:
+                    lines.append(f"     ❌ `{short}`")
+        lines.append("")
+
+    lines.append("━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
