@@ -194,27 +194,26 @@ def generate_weekly_stats(end_date: str) -> str:
         grp_name = last_groups.get(w["user_id"], "Новички / Новые")
         workers_by_group.setdefault(grp_name, []).append(w)
 
+    def _short(d: str) -> str:
+        return datetime.strptime(d, "%Y-%m-%d").strftime("%d.%m")
+
     lines = [f"📊 *Weekly Report: {start_str} → {end_date}*"]
-    lines.append("━━━━━━━━━━━━━━━━━━\n")
+    lines.append("━━━━━━━━━━━━━━━━━━")
 
     for grp_name in sorted(workers_by_group.keys()):
-        lines.append(f"🏘 *{_esc(grp_name)}*")
+        lines.append(f"\n🏘 *{_esc(grp_name)}*")
         for w in sorted(workers_by_group[grp_name], key=lambda x: (x.get("first_name") or "", x.get("last_name") or "")):
             uid = w["user_id"]
             name = _esc(f"{w['first_name']} {w['last_name']}".strip())
             uname = f" (@{_esc(w['username'])})" if w["username"] else ""
             day_map = worker_day_groups.get(uid, {})
             days_present = len(day_map)
+            missed = [_short(d) for d in week_dates if d not in day_map]
 
-            lines.append(f"  • *{name}*{uname} — {i18n.DAYS_PRESENT.format(days_present)}")
-            for d in week_dates:
-                short = datetime.strptime(d, "%Y-%m-%d").strftime("%d.%m %a")
-                if d in day_map:
-                    grps = ", ".join(_esc(g) for g in sorted(day_map[d]))
-                    lines.append(f"     ✅ `{short}` — {grps}")
-                else:
-                    lines.append(f"     ❌ `{short}`")
-        lines.append("")
+            base = f"  • {name}{uname} — `{days_present}/7`"
+            if missed:
+                base += f" ❌ {', '.join(missed)}"
+            lines.append(base)
 
-    lines.append("━━━━━━━━━━━━━━━━━━")
+    lines.append("\n━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
