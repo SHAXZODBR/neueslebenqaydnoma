@@ -65,6 +65,15 @@ NEW_GROUP_MEMBER = "👋 Здравствуйте! Здесь сотрудник
 GENERATING_FULL_EXPORT = "⏳ Генерация полного экспорта всех данных..."
 EXCEL_SHEET_CHECKINS = "Все чекины"
 EXCEL_SHEET_SUMMARY = "Дневной отчет"
+EXCEL_SHEET_WEEKLY = "Недельный обзор"
+
+# Weekly report
+WEEKLY_GENERATING = "⏳ Генерация недельного отчёта... / Haftalik hisobot tayyorlanmoqda..."
+WEEKLY_EXCEL_TITLE = "Недельный отчёт о посещаемости"
+COL_FULL_NAME = "ФИО"
+COL_USERNAME = "Юзернейм"
+COL_GROUP = "Группа"
+COL_DAYS = "Дней"
 
 def get_media_received(m_type: str) -> str:
     if m_type == "photo":

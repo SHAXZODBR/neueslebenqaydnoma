@@ -25,7 +25,7 @@ import config
 import database_supabase as db
 import i18n
 from analytics import generate_daily_text_summary, generate_weekly_stats
-from export import generate_export
+from export import generate_export, generate_weekly_export
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -228,8 +228,25 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_weekly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
-    text = generate_weekly_stats(_now().strftime("%Y-%m-%d"))
+    today = _now().strftime("%Y-%m-%d")
+    await update.message.reply_text(i18n.WEEKLY_GENERATING)
+
+    # 1. Compact text overview (quick glance in chat)
+    text = generate_weekly_stats(today)
     await send_long_message(ctx.bot, update.effective_chat.id, text, parse_mode="Markdown")
+
+    # 2. Full Excel with every check-in time per day
+    try:
+        filepath = generate_weekly_export(today)
+        with open(filepath, "rb") as doc:
+            await ctx.bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=doc,
+                filename=f"weekly_{today}.xlsx",
+            )
+    except Exception as e:
+        logger.error(f"Weekly export failed: {e}")
+        await update.message.reply_text("⚠️ Не удалось создать Excel-файл недельного отчёта.")
 
 async def cmd_set_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
