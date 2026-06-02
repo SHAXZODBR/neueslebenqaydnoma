@@ -12,6 +12,24 @@ BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 _raw_admins = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS: list[int] = [int(x.strip()) for x in _raw_admins.split(",") if x.strip()]
 
+# ── Exclusions ─────────────────────────────────────────────────────────────
+# Accounts (by @username) and groups (by id) that should NEVER be tracked or
+# appear in any report — e.g. admins/supervisors and test groups. These are
+# filtered out of all workers, check-ins, and reports regardless of DB state.
+_raw_excl_users = os.getenv(
+    "EXCLUDED_USERNAMES",
+    "Gulzanna_Tairova,shakhzodbtr,mukaddasyu,NigoraAzizkhan",
+)
+EXCLUDED_USERNAMES: set[str] = {
+    u.strip().lstrip("@").lower() for u in _raw_excl_users.split(",") if u.strip()
+}
+
+_raw_excl_groups = os.getenv("EXCLUDED_GROUP_IDS", "-1003892915947")
+EXCLUDED_GROUP_IDS: set[int] = {
+    int(g.strip()) for g in _raw_excl_groups.split(",")
+    if g.strip().lstrip("-").isdigit()
+}
+
 # ── Timezone ─────────────────────────────────────────────────────────────
 TIMEZONE: str = os.getenv("TIMEZONE", "Asia/Tashkent")
 

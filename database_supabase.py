@@ -160,22 +160,32 @@ def _flatten_checkins(data: List[Dict]) -> List[Dict]:
     if not data: return []
     flattened = []
     for item in data:
-        worker = item.get("workers", {})
-        group = item.get("groups", {})
+        worker = item.get("workers") or {}
+        group = item.get("groups") or {}
         item["username"] = worker.get("username", "")
         item["first_name"] = worker.get("first_name", "")
         item["last_name"] = worker.get("last_name", "")
         item["group_name"] = group.get("group_name", "")
+        # Drop check-ins from excluded users / groups entirely.
+        if item.get("group_id") in config.EXCLUDED_GROUP_IDS:
+            continue
+        if _is_excluded_username(item["username"]):
+            continue
         flattened.append(item)
     return flattened
 
+def _is_excluded_username(username: str) -> bool:
+    return (username or "").lstrip("@").lower() in config.EXCLUDED_USERNAMES
+
 def get_all_workers() -> List[Dict]:
     res = supabase.table("workers").select("*").order("first_name").execute()
-    return res.data
+    workers = res.data or []
+    return [w for w in workers if not _is_excluded_username(w.get("username"))]
 
 def get_all_groups() -> List[Dict]:
     res = supabase.table("groups").select("*").order("group_name").execute()
-    return res.data
+    groups = res.data or []
+    return [g for g in groups if g.get("group_id") not in config.EXCLUDED_GROUP_IDS]
 
 def get_worker_checkin_count(user_id: int, target_date: str) -> int:
     res = supabase.table("checkins") \
@@ -238,7 +248,7 @@ def get_workers_last_groups() -> Dict[int, str]:
         .select("user_id, group_id, groups(group_name)") \
         .order("timestamp", desc=True)
     data = _fetch_all(query)
-    
+
     mapping = {}
     for item in data:
         uid = item["user_id"]
@@ -246,6 +256,78 @@ def get_workers_last_groups() -> Dict[int, str]:
             grp = item.get("groups", {})
             mapping[uid] = grp.get("group_name", "Unknown Group")
     return mapping
+
+def get_workers_last_group_ids() -> Dict[int, int]:
+    """Get a mapping of user_id -> last group_id they checked into.
+
+    Used by /sync to know which group to verify each worker's membership in.
+    """
+    query = supabase.table("checkins") \
+        .select("user_id, group_id") \
+        .order("timestamp", desc=True)
+    data = _fetch_all(query)
+
+    mapping = {}
+    for item in data:
+        uid = item["user_id"]
+        if uid not in mapping:
+            mapping[uid] = item["group_id"]
+    return mapping
+
+# ── Group membership ─────────────────────────────────────────────────────
+
+def set_member_active(group_id: int, user_id: int) -> None:
+    """Mark a (group, user) as an active member (idempotent upsert)."""
+    try:
+        supabase.table("group_members").upsert({
+            "group_id": group_id,
+            "user_id": user_id,
+            "is_active": True,
+            "left_at": None,
+        }, on_conflict="group_id,user_id").execute()
+    except Exception as e:
+        print(f"⚠️ set_member_active failed: {e}")
+
+def set_member_left(group_id: int, user_id: int) -> None:
+    """Mark a (group, user) as having left/been removed from the group."""
+    try:
+        supabase.table("group_members").upsert({
+            "group_id": group_id,
+            "user_id": user_id,
+            "is_active": False,
+            "left_at": _now().isoformat(),
+        }, on_conflict="group_id,user_id").execute()
+    except Exception as e:
+        print(f"⚠️ set_member_left failed: {e}")
+
+def get_inactive_worker_ids() -> set:
+    """User IDs known to have left every group they belonged to.
+
+    A user counts as inactive ONLY if they have membership rows AND none of
+    them is active. Users with no membership rows are treated as active
+    (fail-open) so reports never hide people we haven't explicitly removed.
+    Returns an empty set if the membership table is missing/unreachable.
+    """
+    try:
+        query = supabase.table("group_members").select("user_id, is_active")
+        rows = _fetch_all(query)
+    except Exception as e:
+        print(f"⚠️ get_inactive_worker_ids failed (treating all as active): {e}")
+        return set()
+
+    any_active: Dict[int, bool] = {}
+    for r in rows:
+        uid = r["user_id"]
+        any_active[uid] = any_active.get(uid, False) or bool(r["is_active"])
+    return {uid for uid, active in any_active.items() if not active}
+
+def get_active_workers() -> List[Dict]:
+    """All workers except those explicitly known to have left their group(s)."""
+    workers = get_all_workers()
+    inactive = get_inactive_worker_ids()
+    if not inactive:
+        return workers
+    return [w for w in workers if w["user_id"] not in inactive]
 
 # ── Admin management ─────────────────────────────────────────────────────
 

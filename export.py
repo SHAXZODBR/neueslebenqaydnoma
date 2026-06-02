@@ -187,7 +187,7 @@ def generate_export(checkins: list[dict], title: str = "attendance") -> str:
     # Group checkins by date to compute summary
     dates = sorted(set(c["date"] for c in checkins)) if checkins else []
     row_idx = 2
-    all_workers = db.get_all_workers()
+    all_workers = db.get_active_workers()
 
     for d in dates:
         summary = db.get_daily_summary(d)
@@ -280,7 +280,7 @@ def generate_weekly_export(end_date: str, title: str = "weekly") -> str:
 
     # File submissions only (exclude location-only / text entries).
     checkins = [c for c in db.get_checkins_for_range(start_str, end_date) if c.get("media_file_id")]
-    all_workers = db.get_all_workers()
+    all_workers = db.get_active_workers()
     last_groups = db.get_workers_last_groups()
 
     # user_id -> { date -> {"HH:MM", ...} } (unique minutes = the distinct send times)

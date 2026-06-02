@@ -5,6 +5,7 @@ BUTTON_TODAY = "📊 Отчет за сегодня"
 BUTTON_EXCEL = "📥 Скачать Excel"
 BUTTON_WEEKLY = "📅 Недельная аналитика"
 BUTTON_EXPORT_ALL = "📁 Экспорт всех данных"
+BUTTON_SYNC = "🔄 Обновить список"
 BUTTON_HELP = "⚙️ Помощь"
 
 # Bot Responses (Pure Russian)
@@ -52,6 +53,7 @@ HELP_TEXT = (
     "  /export `[ГГГГ-ММ-ДД]` — Экспорт в Excel за дату\n"
     "  /summary `[ГГГГ-ММ-ДД]` — Текстовый отчет за день\n"
     "  /weekly — Недельная статистика\n"
+    "  /sync — Обновить список (убрать ушедших сотрудников)\n"
     "  /set\\_channel `ID` — Установить канал для отчетов\n"
     "  /refresh\\_summary — Отправить отчет сейчас\n"
     "  /myid — Узнать свой Telegram ID\n"
@@ -66,6 +68,15 @@ GENERATING_FULL_EXPORT = "⏳ Генерация полного экспорта
 EXCEL_SHEET_CHECKINS = "Все чекины"
 EXCEL_SHEET_SUMMARY = "Дневной отчет"
 EXCEL_SHEET_WEEKLY = "Недельный обзор"
+
+# Membership sync
+SYNC_START = "⏳ Обновляю список сотрудников по группам... (это может занять минуту)"
+SYNC_DONE = (
+    "✅ *Список обновлён!*\n"
+    "  👥 В группах: `{}`\n"
+    "  🚪 Вышли / удалены: `{}`\n"
+    "  ❔ Не удалось проверить: `{}`"
+)
 
 # Weekly report
 WEEKLY_GENERATING = "⏳ Генерация недельного отчёта... / Haftalik hisobot tayyorlanmoqda..."

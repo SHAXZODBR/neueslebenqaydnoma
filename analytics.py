@@ -63,7 +63,7 @@ def _esc(text: str) -> str:
 
 def generate_daily_text_summary(target_date: str) -> str:
     """Generate a formatted text summary for a given date, showing optimized check-in times."""
-    all_workers = db.get_all_workers()
+    all_workers = db.get_active_workers()
     all_checkins_raw = db.get_checkins_for_date(target_date)
     # ONLY file submissions — exclude location-only, text, chat join entries
     all_checkins = [c for c in all_checkins_raw if c.get("media_file_id")]
@@ -168,7 +168,7 @@ def generate_weekly_stats(end_date: str) -> str:
     start = end - timedelta(days=6)
     start_str = start.strftime("%Y-%m-%d")
 
-    all_workers = db.get_all_workers()
+    all_workers = db.get_active_workers()
     # Pull full info so we can show group + date breakdown (file submissions only)
     checkins_raw = db.get_checkins_for_range(start_str, end_date)
     checkins = [c for c in checkins_raw if c.get("media_file_id")]

@@ -75,7 +75,7 @@ def _admin_keyboard() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(i18n.BUTTON_TODAY), KeyboardButton(i18n.BUTTON_EXCEL)],
         [KeyboardButton(i18n.BUTTON_WEEKLY), KeyboardButton(i18n.BUTTON_EXPORT_ALL)],
-        [KeyboardButton(i18n.BUTTON_HELP)],
+        [KeyboardButton(i18n.BUTTON_SYNC), KeyboardButton(i18n.BUTTON_HELP)],
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
@@ -90,6 +90,7 @@ async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     _register_user(user)
     _register_group(chat)
+    db.set_member_active(chat.id, user.id)  # checking in ⇒ active member of this group
 
     if msg.photo:
         media_type = "photo"
@@ -132,6 +133,7 @@ async def handle_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
 
     _register_user(user)
     _register_group(chat)
+    db.set_member_active(chat.id, user.id)  # sharing location ⇒ active member of this group
 
     now = _now()
     lat, lon = msg.location.latitude, msg.location.longitude
@@ -263,9 +265,41 @@ async def cmd_refresh_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
     await auto_daily_report(ctx)
     await update.message.reply_text("✅ Report sent.")
 
+async def cmd_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reconcile the roster with Telegram: mark workers who left their group inactive."""
+    if not await _is_admin(update.effective_user.id): return
+    await update.message.reply_text(i18n.SYNC_START)
+
+    workers = db.get_all_workers()
+    last_gids = db.get_workers_last_group_ids()
+    kept = removed = unknown = 0
+
+    for w in workers:
+        gid = last_gids.get(w["user_id"])
+        if not gid:
+            unknown += 1
+            continue
+        try:
+            member = await ctx.bot.get_chat_member(gid, w["user_id"])
+            if member.status in ("left", "kicked"):
+                db.set_member_left(gid, w["user_id"])
+                removed += 1
+            else:
+                db.set_member_active(gid, w["user_id"])
+                kept += 1
+        except Exception as e:
+            # Bot not in/ not admin of the group, user unknown there, etc. — leave as-is.
+            logger.warning(f"sync: get_chat_member failed for {w['user_id']} in {gid}: {e}")
+            unknown += 1
+        await asyncio.sleep(0.05)  # gentle on Telegram rate limits
+
+    await update.message.reply_text(
+        i18n.SYNC_DONE.format(kept, removed, unknown), parse_mode="Markdown"
+    )
+
 async def cmd_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
-    workers = db.get_all_workers()
+    workers = db.get_active_workers()
     lines = [f"👥 *Workers ({len(workers)})*"]
     for i, w in enumerate(workers, 1):
         lines.append(f"{i}. {w['first_name']} {w['last_name']} (@{w['username']})")
@@ -300,6 +334,7 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             i18n.BUTTON_EXCEL: cmd_export,
             i18n.BUTTON_WEEKLY: cmd_weekly,
             i18n.BUTTON_EXPORT_ALL: cmd_export_all,
+            i18n.BUTTON_SYNC: cmd_sync,
             i18n.BUTTON_HELP: cmd_help
         }
         
@@ -315,13 +350,30 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def handle_new_chat_members(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
-    if not msg or not msg.new_chat_members: return
+    chat = update.effective_chat
+    if not msg or not msg.new_chat_members or not chat:
+        return
     bot_user = await ctx.bot.get_me()
     for member in msg.new_chat_members:
         if member.id == bot_user.id:
-            _register_group(update.effective_chat)
+            _register_group(chat)
             await msg.reply_text(i18n.NEW_GROUP_MEMBER)
-            break
+        elif not member.is_bot:
+            # A human joined — add them to the roster and mark them active.
+            _register_user(member)
+            db.set_member_active(chat.id, member.id)
+
+async def handle_left_chat_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """A user left or was removed — drop them from the active roster for that group."""
+    msg = update.effective_message
+    chat = update.effective_chat
+    if not msg or not msg.left_chat_member or not chat:
+        return
+    member = msg.left_chat_member
+    if member.is_bot:
+        return
+    db.set_member_left(chat.id, member.id)
+    logger.info(f"Member {member.id} left group {chat.id} — marked inactive.")
 
 async def send_long_message(bot, chat_id, text, **kwargs):
     """Split and send message if it exceeds Telegram's 4096 char limit."""
@@ -422,6 +474,7 @@ def _register_handlers(application):
     application.add_handler(CommandHandler("summary", cmd_summary))
     application.add_handler(CommandHandler("refresh_summary", cmd_refresh_summary))
     application.add_handler(CommandHandler("weekly", cmd_weekly))
+    application.add_handler(CommandHandler("sync", cmd_sync))
     application.add_handler(CommandHandler("workers", cmd_workers))
     application.add_handler(CommandHandler("groups", cmd_groups))
     application.add_handler(CommandHandler("set_channel", cmd_set_channel))  # ← was missing!
@@ -431,6 +484,7 @@ def _register_handlers(application):
     application.add_handler(MessageHandler((filters.PHOTO | filters.VIDEO | filters.VIDEO_NOTE | filters.Document.IMAGE | filters.Document.VIDEO) & filters.ChatType.GROUPS, handle_media))
     application.add_handler(MessageHandler(filters.LOCATION & filters.ChatType.GROUPS, handle_location))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
+    application.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, handle_left_chat_member))
 
 @app.post("/api/webhook")
 async def webhook_handler(request: Request):

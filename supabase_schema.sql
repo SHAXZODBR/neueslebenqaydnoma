@@ -32,6 +32,20 @@ CREATE TABLE IF NOT EXISTS checkins (
 CREATE INDEX IF NOT EXISTS idx_checkins_date ON checkins(date);
 CREATE INDEX IF NOT EXISTS idx_checkins_user_date ON checkins(user_id, date);
 
+-- Group membership table — tracks who currently belongs to each group.
+-- A worker is shown in reports unless they are explicitly marked inactive here
+-- (i.e. they left/were removed from every group they were known to be in).
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id  BIGINT NOT NULL,
+    user_id   BIGINT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    left_at   TIMESTAMPTZ,
+    PRIMARY KEY (group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_members_active ON group_members(user_id, is_active);
+
 -- Admins table
 CREATE TABLE IF NOT EXISTS admins (
     user_id BIGINT PRIMARY KEY
