@@ -258,15 +258,19 @@ async def cmd_weekly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_monthly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
-    month = ctx.args[0] if ctx.args else None  # optional YYYY-MM
-    await update.message.reply_text(i18n.MONTHLY_GENERATING)
+    if ctx.args:
+        month = ctx.args[0]  # explicit YYYY-MM
+    else:
+        # Default: the last *complete* calendar month (e.g. run in July -> June).
+        prev = _now().date().replace(day=1) - timedelta(days=1)
+        month = prev.strftime("%Y-%m")
+    await update.message.reply_text(f"{i18n.MONTHLY_GENERATING}\n📅 {month}")
     try:
         filepath = generate_monthly_export(month)
-        label = month or _now().strftime("%Y-%m")
         with open(filepath, "rb") as doc:
             await ctx.bot.send_document(
                 chat_id=update.effective_chat.id, document=doc,
-                filename=f"monthly_{label}.xlsx",
+                filename=f"monthly_{month}.xlsx",
             )
     except Exception as e:
         logger.error(f"Monthly export failed: {e}")
