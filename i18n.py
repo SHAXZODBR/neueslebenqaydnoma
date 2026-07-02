@@ -4,6 +4,8 @@
 BUTTON_TODAY = "📊 Отчет за сегодня"
 BUTTON_EXCEL = "📥 Скачать Excel"
 BUTTON_WEEKLY = "📅 Недельная аналитика"
+BUTTON_MONTHLY = "🗓 Месячный отчёт"
+BUTTON_ALLTIME = "📈 За всё время"
 BUTTON_EXPORT_ALL = "📁 Экспорт всех данных"
 BUTTON_SYNC = "🔄 Обновить список"
 BUTTON_HELP = "⚙️ Помощь"
@@ -53,6 +55,8 @@ HELP_TEXT = (
     "  /export `[ГГГГ-ММ-ДД]` — Экспорт в Excel за дату\n"
     "  /summary `[ГГГГ-ММ-ДД]` — Текстовый отчет за день\n"
     "  /weekly — Недельная статистика\n"
+    "  /monthly `[ГГГГ-ММ]` — Месячный отчёт (Excel)\n"
+    "  /alltime — Отчёт за всё время (Excel)\n"
     "  /sync — Обновить список (убрать ушедших сотрудников)\n"
     "  /set\\_channel `ID` — Установить канал для отчетов\n"
     "  /refresh\\_summary — Отправить отчет сейчас\n"
@@ -81,6 +85,13 @@ SYNC_DONE = (
 # Weekly report
 WEEKLY_GENERATING = "⏳ Генерация недельного отчёта... / Haftalik hisobot tayyorlanmoqda..."
 WEEKLY_EXCEL_TITLE = "Недельный отчёт о посещаемости"
+
+# Monthly / all-time reports
+MONTHLY_GENERATING = "⏳ Генерация месячного отчёта... / Oylik hisobot tayyorlanmoqda..."
+MONTHLY_EXCEL_TITLE = "Месячный отчёт о посещаемости"
+ALLTIME_GENERATING = "⏳ Генерация отчёта за всё время... (может занять минуту)"
+ALLTIME_EXCEL_TITLE = "Посещаемость"
+
 COL_FULL_NAME = "ФИО"
 COL_USERNAME = "Юзернейм"
 COL_GROUP = "Группа"

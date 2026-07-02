@@ -25,7 +25,12 @@ import config
 import database_supabase as db
 import i18n
 from analytics import generate_daily_text_summary, generate_weekly_stats
-from export import generate_export, generate_weekly_export
+from export import (
+    generate_export,
+    generate_weekly_export,
+    generate_monthly_export,
+    generate_alltime_export,
+)
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -74,7 +79,8 @@ async def _is_admin(user_id: int) -> bool:
 def _admin_keyboard() -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(i18n.BUTTON_TODAY), KeyboardButton(i18n.BUTTON_EXCEL)],
-        [KeyboardButton(i18n.BUTTON_WEEKLY), KeyboardButton(i18n.BUTTON_EXPORT_ALL)],
+        [KeyboardButton(i18n.BUTTON_WEEKLY), KeyboardButton(i18n.BUTTON_MONTHLY)],
+        [KeyboardButton(i18n.BUTTON_ALLTIME), KeyboardButton(i18n.BUTTON_EXPORT_ALL)],
         [KeyboardButton(i18n.BUTTON_SYNC), KeyboardButton(i18n.BUTTON_HELP)],
     ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
@@ -250,6 +256,36 @@ async def cmd_weekly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Weekly export failed: {e}")
         await update.message.reply_text("⚠️ Не удалось создать Excel-файл недельного отчёта.")
 
+async def cmd_monthly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _is_admin(update.effective_user.id): return
+    month = ctx.args[0] if ctx.args else None  # optional YYYY-MM
+    await update.message.reply_text(i18n.MONTHLY_GENERATING)
+    try:
+        filepath = generate_monthly_export(month)
+        label = month or _now().strftime("%Y-%m")
+        with open(filepath, "rb") as doc:
+            await ctx.bot.send_document(
+                chat_id=update.effective_chat.id, document=doc,
+                filename=f"monthly_{label}.xlsx",
+            )
+    except Exception as e:
+        logger.error(f"Monthly export failed: {e}")
+        await update.message.reply_text("⚠️ Не удалось создать месячный отчёт. Формат: /monthly ГГГГ-ММ")
+
+async def cmd_alltime(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _is_admin(update.effective_user.id): return
+    await update.message.reply_text(i18n.ALLTIME_GENERATING)
+    try:
+        filepath = generate_alltime_export()
+        with open(filepath, "rb") as doc:
+            await ctx.bot.send_document(
+                chat_id=update.effective_chat.id, document=doc,
+                filename="all_time_report.xlsx",
+            )
+    except Exception as e:
+        logger.error(f"All-time export failed: {e}")
+        await update.message.reply_text("⚠️ Не удалось создать отчёт за всё время.")
+
 async def cmd_set_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
     if not ctx.args:
@@ -333,6 +369,8 @@ async def message_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             i18n.BUTTON_TODAY: cmd_summary,
             i18n.BUTTON_EXCEL: cmd_export,
             i18n.BUTTON_WEEKLY: cmd_weekly,
+            i18n.BUTTON_MONTHLY: cmd_monthly,
+            i18n.BUTTON_ALLTIME: cmd_alltime,
             i18n.BUTTON_EXPORT_ALL: cmd_export_all,
             i18n.BUTTON_SYNC: cmd_sync,
             i18n.BUTTON_HELP: cmd_help
@@ -474,6 +512,8 @@ def _register_handlers(application):
     application.add_handler(CommandHandler("summary", cmd_summary))
     application.add_handler(CommandHandler("refresh_summary", cmd_refresh_summary))
     application.add_handler(CommandHandler("weekly", cmd_weekly))
+    application.add_handler(CommandHandler("monthly", cmd_monthly))
+    application.add_handler(CommandHandler("alltime", cmd_alltime))
     application.add_handler(CommandHandler("sync", cmd_sync))
     application.add_handler(CommandHandler("workers", cmd_workers))
     application.add_handler(CommandHandler("groups", cmd_groups))
