@@ -45,6 +45,11 @@ app = FastAPI()
 # Global Application instance (lazy-init)
 bot_app = None
 
+# Best-effort de-dup of Telegram webhook retries within a warm instance.
+# Telegram resends an update if it doesn't get a 200 quickly (e.g. a slow
+# command); this stops the same update_id from being processed twice.
+_seen_update_ids: set = set()
+
 async def get_bot_app():
     global bot_app
     if bot_app is None:
@@ -306,35 +311,43 @@ async def cmd_refresh_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text("✅ Report sent.")
 
 async def cmd_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Reconcile the roster with Telegram: mark workers who left their group inactive."""
+    """Reconcile the roster with Telegram: mark workers who left their group inactive.
+
+    Membership checks run concurrently (bounded) and results are written in one
+    bulk upsert, so this finishes quickly even with hundreds of workers.
+    """
     if not await _is_admin(update.effective_user.id): return
     await update.message.reply_text(i18n.SYNC_START)
 
     workers = db.get_all_workers()
     last_gids = db.get_workers_last_group_ids()
-    kept = removed = unknown = 0
 
-    for w in workers:
-        gid = last_gids.get(w["user_id"])
+    active: list = []
+    left: list = []
+    unknown = 0
+    sem = asyncio.Semaphore(10)  # cap concurrent Telegram calls (rate-limit friendly)
+
+    async def check(w):
+        nonlocal unknown
+        uid = w["user_id"]
+        gid = last_gids.get(uid)
         if not gid:
             unknown += 1
-            continue
-        try:
-            member = await ctx.bot.get_chat_member(gid, w["user_id"])
-            if member.status in ("left", "kicked"):
-                db.set_member_left(gid, w["user_id"])
-                removed += 1
-            else:
-                db.set_member_active(gid, w["user_id"])
-                kept += 1
-        except Exception as e:
-            # Bot not in/ not admin of the group, user unknown there, etc. — leave as-is.
-            logger.warning(f"sync: get_chat_member failed for {w['user_id']} in {gid}: {e}")
-            unknown += 1
-        await asyncio.sleep(0.05)  # gentle on Telegram rate limits
+            return
+        async with sem:
+            try:
+                member = await ctx.bot.get_chat_member(gid, uid)
+            except Exception as e:
+                logger.warning(f"sync: get_chat_member failed for {uid} in {gid}: {e}")
+                unknown += 1
+                return
+        (left if member.status in ("left", "kicked") else active).append((gid, uid))
+
+    await asyncio.gather(*(check(w) for w in workers))
+    db.set_members_bulk(active, left)
 
     await update.message.reply_text(
-        i18n.SYNC_DONE.format(kept, removed, unknown), parse_mode="Markdown"
+        i18n.SYNC_DONE.format(len(active), len(left), unknown), parse_mode="Markdown"
     )
 
 async def cmd_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -535,7 +548,18 @@ async def webhook_handler(request: Request):
     print("📩 Webhook received!")
     application = await get_bot_app()
     data = await request.json()
-    print(f"📦 Payload: {data.get('update_id')}")
+    update_id = data.get("update_id")
+    print(f"📦 Payload: {update_id}")
+
+    # Ignore duplicate deliveries (Telegram retries when a response is slow).
+    if update_id is not None:
+        if update_id in _seen_update_ids:
+            print(f"↩️ Duplicate update {update_id} ignored")
+            return Response(status_code=200)
+        _seen_update_ids.add(update_id)
+        if len(_seen_update_ids) > 2000:
+            _seen_update_ids.clear()  # simple bound; best-effort only
+
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
     return Response(status_code=200)

@@ -33,6 +33,11 @@ _ABSENT_FILL = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="
 
 _LINK_FONT = Font(name="Calibri", color="0563C1", underline="single", size=10)
 
+# Shared alignment objects (reused across cells — creating one per cell is slow on big sheets).
+_ALIGN_CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
+_ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
+_ALIGN_LEFT = Alignment(vertical="center", horizontal="left")
+
 # Russian weekday abbreviations, Monday-first (matches datetime.weekday()).
 _RU_WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 _RU_MONTHS = [
@@ -148,12 +153,13 @@ def _write_detail_sheet(ws, checkins: list[dict], tz: ZoneInfo) -> None:
             cell.font = _LINK_FONT
             cell.value = "🔗 Посмотреть"
 
-        # Borders
-        for col in range(1, len(headers) + 1):
-            ws.cell(row=row_num, column=col).border = _THIN_BORDER
-            ws.cell(row=row_num, column=col).alignment = _CELL_ALIGN
-
-    _auto_width(ws)
+    # Fixed column widths — no per-cell borders/alignment or full-sheet width scan,
+    # so this stays fast even with tens of thousands of rows (Excel gridlines remain).
+    for col_letter, width in {
+        "A": 5, "B": 12, "C": 8, "D": 24, "E": 16, "F": 14,
+        "G": 14, "H": 11, "I": 11, "J": 16, "K": 12, "L": 14,
+    }.items():
+        ws.column_dimensions[col_letter].width = width
     ws.freeze_panes = "A2"  # Freeze header row
 
 
@@ -340,11 +346,11 @@ def _write_matrix_sheet(ws, title_text: str, dates: list[str], checkins: list[di
             else:
                 cell.value = "—"
                 cell.fill = _ABSENT_FILL
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.alignment = _ALIGN_CENTER_WRAP
 
         cnt = ws.cell(row=row, column=total_cols, value=f"{present_days}/{n_days}")
         cnt.font = Font(bold=True)
-        cnt.alignment = Alignment(horizontal="center", vertical="center")
+        cnt.alignment = _ALIGN_CENTER
         if present_days == 0:
             cnt.fill = _ABSENT_FILL
         elif present_days == n_days:
@@ -356,9 +362,9 @@ def _write_matrix_sheet(ws, title_text: str, dates: list[str], checkins: list[di
             c = ws.cell(row=row, column=col)
             c.border = _THIN_BORDER
             if col in (2, 3, 4):
-                c.alignment = Alignment(vertical="center", horizontal="left")
+                c.alignment = _ALIGN_LEFT
             elif col == 1:
-                c.alignment = Alignment(vertical="center", horizontal="center")
+                c.alignment = _ALIGN_CENTER
 
         ws.row_dimensions[row].height = max(16, max_lines * 14)
         row += 1
@@ -480,15 +486,29 @@ def generate_monthly_export(month: str = None, title: str = "monthly") -> str:
 
 def generate_alltime_export(title: str = "alltime") -> str:
     """Create an all-time attendance .xlsx: one weekly-style matrix sheet per
-    month of history, followed by a detailed check-ins sheet for everything.
+    month of history.
+
+    All-time can span tens of thousands of check-ins, so this uses a lightweight
+    (no-join) fetch and shows only the month matrices — no giant per-check-in
+    sheet (use "Экспорт всех данных" for the raw dump). This keeps it fast enough
+    to finish inside the serverless time limit.
     """
     os.makedirs(config.EXPORTS_DIR, exist_ok=True)
     tz = ZoneInfo(config.TIMEZONE)
     today = datetime.now(tz).date()
 
-    checkins = [c for c in db.get_all_checkins() if c.get("media_file_id")]
+    # Lightweight fetch: only the columns the matrix needs (no workers/groups join).
+    raw = db.get_all_checkins(columns="user_id, group_id, date, timestamp, media_file_id")
+    checkins = [c for c in raw
+                if c.get("media_file_id") and c.get("group_id") not in config.EXCLUDED_GROUP_IDS]
     all_workers = db.get_active_workers()
-    last_groups = db.get_workers_last_groups()
+
+    # Group names come from the small groups table (excluded groups already dropped there).
+    groups_by_id = {g["group_id"]: (g.get("group_name") or "—") for g in db.get_all_groups()}
+    last_groups = {}
+    for c in checkins:  # ascending time → last write wins
+        if c["group_id"] in groups_by_id:
+            last_groups[c["user_id"]] = groups_by_id[c["group_id"]]
 
     # Months that actually have data (fall back to the current month if none).
     months = sorted({c["date"][:7] for c in checkins}) or [today.strftime("%Y-%m")]
@@ -504,9 +524,6 @@ def generate_alltime_export(title: str = "alltime") -> str:
             ws, f"{i18n.ALLTIME_EXCEL_TITLE}: {_month_label(year, mon)}",
             dates, month_checkins, all_workers, last_groups, tz,
         )
-
-    ws_detail = wb.create_sheet(i18n.EXCEL_SHEET_CHECKINS)
-    _write_detail_sheet(ws_detail, checkins, tz)
 
     now_str = datetime.now(tz).strftime("%Y%m%d_%H%M%S")
     filename = f"{title}_{now_str}.xlsx"

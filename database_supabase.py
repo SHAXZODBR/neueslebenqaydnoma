@@ -148,13 +148,15 @@ def get_checkins_for_range(start_date: str, end_date: str, columns: str = "*, wo
         return _flatten_checkins(data)
     return data
 
-def get_all_checkins() -> List[Dict]:
+def get_all_checkins(columns: str = "*, workers(*), groups(*)") -> List[Dict]:
     query = supabase.table("checkins") \
-        .select("*, workers(*), groups(*)") \
+        .select(columns) \
         .order("date") \
         .order("timestamp")
     data = _fetch_all(query)
-    return _flatten_checkins(data)
+    if columns == "*, workers(*), groups(*)":
+        return _flatten_checkins(data)
+    return data
 
 def _flatten_checkins(data: List[Dict]) -> List[Dict]:
     if not data: return []
@@ -299,6 +301,19 @@ def set_member_left(group_id: int, user_id: int) -> None:
         }, on_conflict="group_id,user_id").execute()
     except Exception as e:
         print(f"⚠️ set_member_left failed: {e}")
+
+def set_members_bulk(active: list, left: list) -> None:
+    """Upsert many memberships in one request. ``active``/``left`` are lists of
+    (group_id, user_id) tuples. Much faster than one call per worker."""
+    now = _now().isoformat()
+    rows = [{"group_id": g, "user_id": u, "is_active": True, "left_at": None} for g, u in active]
+    rows += [{"group_id": g, "user_id": u, "is_active": False, "left_at": now} for g, u in left]
+    if not rows:
+        return
+    try:
+        supabase.table("group_members").upsert(rows, on_conflict="group_id,user_id").execute()
+    except Exception as e:
+        print(f"⚠️ set_members_bulk failed: {e}")
 
 def get_inactive_worker_ids() -> set:
     """User IDs known to have left every group they belonged to.
