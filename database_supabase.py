@@ -2,7 +2,7 @@
 
 import config
 from supabase import create_client, Client
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional, List, Dict
 
@@ -44,8 +44,13 @@ def init_db() -> None:
 # ── Settings ─────────────────────────────────────────────────────────────
 
 def get_setting(key: str, default: str = "") -> str:
-    res = supabase.table("settings").select("value").eq("key", key).maybe_single().execute()
-    return res.data["value"] if res.data else default
+    # NB: maybe_single() returns None (not an empty response) when no row matches.
+    try:
+        res = supabase.table("settings").select("value").eq("key", key).maybe_single().execute()
+        return res.data["value"] if res and res.data else default
+    except Exception as e:
+        print(f"⚠️ get_setting({key}) failed: {e}")
+        return default
 
 def set_setting(key: str, value: str) -> None:
     supabase.table("settings").upsert({"key": key, "value": value}).execute()
@@ -55,6 +60,105 @@ def get_report_channel() -> str:
 
 def set_report_channel(channel_id: str) -> None:
     set_setting("report_channel_id", channel_id)
+
+# ── Webhook update de-duplication ────────────────────────────────────────
+# Telegram retries an update if the webhook doesn't answer 200 quickly. On
+# serverless, each retry can hit a FRESH instance, so an in-memory set is not
+# enough — we record processed update_ids in the settings table (key is the
+# PRIMARY KEY, so a plain INSERT is an atomic "first writer wins" check).
+
+def try_mark_update_processed(update_id: int) -> bool:
+    """Record a Telegram update_id. Returns False if it was already processed
+    (by any instance). Fail-open: on unexpected DB errors returns True so real
+    updates are never silently dropped."""
+    try:
+        supabase.table("settings").insert({
+            "key": f"upd_{update_id}",
+            "value": _now().isoformat(),
+        }).execute()
+        return True
+    except Exception as e:
+        msg = str(e)
+        # 23505 = Postgres unique violation; PostgREST surfaces it as a 409.
+        if "23505" in msg or "409" in msg or "duplicate" in msg.lower():
+            return False
+        print(f"⚠️ try_mark_update_processed failed (processing anyway): {e}")
+        return True
+
+def is_update_processed(update_id: int) -> bool:
+    """Read-only check: was this update already fully processed?
+    Used for group check-in updates, which are marked AFTER processing so a
+    killed invocation gets retried by Telegram instead of losing the check-in."""
+    try:
+        res = supabase.table("settings").select("key") \
+            .eq("key", f"upd_{update_id}").maybe_single().execute()
+        return res is not None and res.data is not None
+    except Exception as e:
+        print(f"⚠️ is_update_processed failed (treating as new): {e}")
+        return False
+
+def cleanup_processed_updates(older_than_hours: int = 48) -> None:
+    """Delete old upd_* rows so the settings table stays small.
+    Telegram never retries an update after 24h, so 48h is safely past that."""
+    cutoff = (_now() - timedelta(hours=older_than_hours)).isoformat()
+    try:
+        # returning="minimal": don't ship every deleted row back over HTTP.
+        supabase.table("settings").delete(returning="minimal") \
+            .like("key", "upd_%") \
+            .lt("value", cutoff) \
+            .execute()
+    except Exception as e:
+        print(f"⚠️ cleanup_processed_updates failed: {e}")
+
+# ── Cross-instance locks ─────────────────────────────────────────────────
+
+def acquire_lock(name: str, ttl_seconds: int = 180) -> Optional[str]:
+    """Atomically acquire a named lock via INSERT on the settings PK.
+
+    Returns an ownership token (store it and pass to release_lock), or None if
+    another holder has a fresh lock. A stale lock (older than ttl_seconds —
+    e.g. its holder was killed) is broken and re-acquired. Fail-open: on
+    unexpected DB errors a token is returned so features keep working.
+    """
+    key = f"lock_{name}"
+    token = _now().isoformat()
+
+    def _try_insert() -> bool:
+        try:
+            supabase.table("settings").insert({"key": key, "value": token}).execute()
+            return True
+        except Exception as e:
+            msg = str(e)
+            if "23505" in msg or "409" in msg or "duplicate" in msg.lower():
+                return False
+            print(f"⚠️ acquire_lock({name}) failed (proceeding unlocked): {e}")
+            return True  # fail-open
+
+    if _try_insert():
+        return token
+
+    # Lock row exists — is it stale?
+    holder = get_setting(key, "")
+    try:
+        if holder and (_now() - datetime.fromisoformat(holder)).total_seconds() < ttl_seconds:
+            return None  # fresh lock, someone else is running
+    except ValueError:
+        pass  # unparseable value — treat as stale
+    # Break the stale lock (only if it still holds the value we saw) and retry once.
+    try:
+        supabase.table("settings").delete(returning="minimal") \
+            .eq("key", key).eq("value", holder).execute()
+    except Exception as e:
+        print(f"⚠️ acquire_lock({name}) stale-break failed: {e}")
+    return token if _try_insert() else None
+
+def release_lock(name: str, token: str) -> None:
+    """Release a lock, but only if we still own it (value matches our token)."""
+    try:
+        supabase.table("settings").delete(returning="minimal") \
+            .eq("key", f"lock_{name}").eq("value", token).execute()
+    except Exception as e:
+        print(f"⚠️ release_lock({name}) failed: {e}")
 
 # ── Upsert helpers ───────────────────────────────────────────────────────
 
@@ -109,17 +213,21 @@ def update_checkin_location(checkin_id: int, latitude: float, longitude: float) 
     }).eq("id", checkin_id).execute()
 
 def get_last_checkin_without_location(user_id: int, group_id: int) -> Optional[dict]:
-    res = supabase.table("checkins") \
-        .select("*") \
-        .eq("user_id", user_id) \
-        .eq("group_id", group_id) \
-        .is_("latitude", "NULL") \
-        .is_("longitude", "NULL") \
-        .order("timestamp", desc=True) \
-        .limit(1) \
-        .maybe_single() \
-        .execute()
-    return res.data if res.data else None
+    try:
+        res = supabase.table("checkins") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .eq("group_id", group_id) \
+            .is_("latitude", "NULL") \
+            .is_("longitude", "NULL") \
+            .order("timestamp", desc=True) \
+            .limit(1) \
+            .maybe_single() \
+            .execute()
+        return res.data if res and res.data else None
+    except Exception as e:
+        print(f"⚠️ get_last_checkin_without_location failed: {e}")
+        return None
 
 # ── Queries ──────────────────────────────────────────────────────────────
 
@@ -244,37 +352,58 @@ def get_unique_dates() -> List[str]:
     dates = sorted(list(set(item["date"] for item in res.data)))
     return dates
 
+def _last_group_id_map() -> Dict[int, int]:
+    """user_id -> group_id of their most recent check-in (excluded groups skipped).
+
+    Scans check-ins newest-first and STOPS as soon as every known worker is
+    covered — active rosters are all present within the first few pages, so
+    this is typically 2-4 requests instead of paging the whole table.
+    """
+    worker_ids = {w["user_id"] for w in get_all_workers()}
+    mapping: Dict[int, int] = {}
+    offset = 0
+    while True:
+        page = supabase.table("checkins") \
+            .select("user_id, group_id") \
+            .order("timestamp", desc=True) \
+            .range(offset, offset + _PAGE_SIZE - 1) \
+            .execute()
+        if not page.data:
+            break
+        for item in page.data:
+            uid = item["user_id"]
+            if uid not in mapping and item["group_id"] not in config.EXCLUDED_GROUP_IDS:
+                mapping[uid] = item["group_id"]
+        if worker_ids and worker_ids.issubset(mapping.keys()):
+            break  # every known worker mapped — no need to scan older history
+        if len(page.data) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+    return mapping
+
 def get_workers_last_groups() -> Dict[int, str]:
     """Get a mapping of user_id -> last group name they checked into."""
-    query = supabase.table("checkins") \
-        .select("user_id, group_id, groups(group_name)") \
-        .order("timestamp", desc=True)
-    data = _fetch_all(query)
-
-    mapping = {}
-    for item in data:
-        uid = item["user_id"]
-        if uid not in mapping:
-            grp = item.get("groups", {})
-            mapping[uid] = grp.get("group_name", "Unknown Group")
-    return mapping
+    groups_by_id = {g["group_id"]: (g.get("group_name") or "Unknown Group")
+                    for g in get_all_groups()}
+    return {uid: groups_by_id.get(gid, "Unknown Group")
+            for uid, gid in _last_group_id_map().items()}
 
 def get_workers_last_group_ids() -> Dict[int, int]:
     """Get a mapping of user_id -> last group_id they checked into.
 
     Used by /sync to know which group to verify each worker's membership in.
     """
-    query = supabase.table("checkins") \
-        .select("user_id, group_id") \
-        .order("timestamp", desc=True)
-    data = _fetch_all(query)
+    return _last_group_id_map()
 
-    mapping = {}
-    for item in data:
-        uid = item["user_id"]
-        if uid not in mapping:
-            mapping[uid] = item["group_id"]
-    return mapping
+def get_excluded_worker_ids() -> set:
+    """user_ids of accounts excluded via EXCLUDED_USERNAMES (raw workers scan)."""
+    try:
+        res = supabase.table("workers").select("user_id, username").execute()
+        return {w["user_id"] for w in (res.data or [])
+                if _is_excluded_username(w.get("username"))}
+    except Exception as e:
+        print(f"⚠️ get_excluded_worker_ids failed: {e}")
+        return set()
 
 # ── Group membership ─────────────────────────────────────────────────────
 
@@ -349,8 +478,12 @@ def get_active_workers() -> List[Dict]:
 def is_admin(user_id: int) -> bool:
     if user_id in config.ADMIN_IDS:
         return True
-    res = supabase.table("admins").select("user_id").eq("user_id", user_id).maybe_single().execute()
-    return res.data is not None
+    try:
+        res = supabase.table("admins").select("user_id").eq("user_id", user_id).maybe_single().execute()
+        return res is not None and res.data is not None
+    except Exception as e:
+        print(f"⚠️ is_admin({user_id}) failed: {e}")
+        return False
 
 def add_admin(user_id: int) -> None:
     supabase.table("admins").upsert({"user_id": user_id}).execute()

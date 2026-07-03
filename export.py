@@ -498,17 +498,16 @@ def generate_alltime_export(title: str = "alltime") -> str:
     today = datetime.now(tz).date()
 
     # Lightweight fetch: only the columns the matrix needs (no workers/groups join).
+    # The join-time exclusion filtering is bypassed here, so apply both exclusion
+    # rules (groups by id, users by id) manually.
     raw = db.get_all_checkins(columns="user_id, group_id, date, timestamp, media_file_id")
+    excluded_uids = db.get_excluded_worker_ids()
     checkins = [c for c in raw
-                if c.get("media_file_id") and c.get("group_id") not in config.EXCLUDED_GROUP_IDS]
+                if c.get("media_file_id")
+                and c.get("group_id") not in config.EXCLUDED_GROUP_IDS
+                and c.get("user_id") not in excluded_uids]
     all_workers = db.get_active_workers()
-
-    # Group names come from the small groups table (excluded groups already dropped there).
-    groups_by_id = {g["group_id"]: (g.get("group_name") or "—") for g in db.get_all_groups()}
-    last_groups = {}
-    for c in checkins:  # ascending time → last write wins
-        if c["group_id"] in groups_by_id:
-            last_groups[c["user_id"]] = groups_by_id[c["group_id"]]
+    last_groups = db.get_workers_last_groups()  # early-stop scan — cheap
 
     # Months that actually have data (fall back to the current month if none).
     months = sorted({c["date"][:7] for c in checkins}) or [today.strftime("%Y-%m")]

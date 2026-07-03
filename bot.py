@@ -317,38 +317,54 @@ async def cmd_sync(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     bulk upsert, so this finishes quickly even with hundreds of workers.
     """
     if not await _is_admin(update.effective_user.id): return
-    await update.message.reply_text(i18n.SYNC_START)
 
-    workers = db.get_all_workers()
-    last_gids = db.get_workers_last_group_ids()
+    # Cross-instance lock (atomic INSERT on the settings PK): if a sync is
+    # already running, don't start another one — just tell the admin.
+    lock_token = db.acquire_lock("sync", ttl_seconds=180)
+    if lock_token is None:
+        await update.message.reply_text(i18n.SYNC_BUSY)
+        return
 
-    active: list = []
-    left: list = []
-    unknown = 0
-    sem = asyncio.Semaphore(10)  # cap concurrent Telegram calls (rate-limit friendly)
+    try:
+        await update.message.reply_text(i18n.SYNC_START)
+        workers = db.get_all_workers()
+        last_gids = db.get_workers_last_group_ids()
 
-    async def check(w):
-        nonlocal unknown
-        uid = w["user_id"]
-        gid = last_gids.get(uid)
-        if not gid:
-            unknown += 1
-            return
-        async with sem:
-            try:
-                member = await ctx.bot.get_chat_member(gid, uid)
-            except Exception as e:
-                logger.warning(f"sync: get_chat_member failed for {uid} in {gid}: {e}")
+        active: list = []
+        left: list = []
+        unknown = 0
+        sem = asyncio.Semaphore(5)  # cap concurrent Telegram calls (rate-limit friendly)
+
+        def _is_gone(member) -> bool:
+            # "restricted" members may have already left the group.
+            if member.status in ("left", "kicked"):
+                return True
+            return member.status == "restricted" and not getattr(member, "is_member", True)
+
+        async def check(w):
+            nonlocal unknown
+            uid = w["user_id"]
+            gid = last_gids.get(uid)
+            if not gid:
                 unknown += 1
                 return
-        (left if member.status in ("left", "kicked") else active).append((gid, uid))
+            async with sem:
+                try:
+                    member = await ctx.bot.get_chat_member(gid, uid)
+                except Exception as e:
+                    logger.warning(f"sync: get_chat_member failed for {uid} in {gid}: {e}")
+                    unknown += 1
+                    return
+            (left if _is_gone(member) else active).append((gid, uid))
 
-    await asyncio.gather(*(check(w) for w in workers))
-    db.set_members_bulk(active, left)
+        await asyncio.gather(*(check(w) for w in workers))
+        db.set_members_bulk(active, left)
 
-    await update.message.reply_text(
-        i18n.SYNC_DONE.format(len(active), len(left), unknown), parse_mode="Markdown"
-    )
+        await update.message.reply_text(
+            i18n.SYNC_DONE.format(len(active), len(left), unknown), parse_mode="Markdown"
+        )
+    finally:
+        db.release_lock("sync", lock_token)  # only removes the lock if we still own it
 
 async def cmd_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
@@ -552,9 +568,29 @@ async def webhook_handler(request: Request):
     print(f"📦 Payload: {update_id}")
 
     # Ignore duplicate deliveries (Telegram retries when a response is slow).
+    # Two layers: the in-memory set catches repeats on a warm instance for free;
+    # the DB check catches retries that land on a DIFFERENT serverless instance.
+    #
+    # WHEN to mark matters:
+    #  - Private chats = admin commands (reports, /sync). Mark BEFORE processing:
+    #    a retry of a slow report must NOT re-run it (that was the repeat storm).
+    #    Losing one killed command is fine — the admin just presses again.
+    #  - Group updates = worker check-ins (the actual attendance data). Mark
+    #    AFTER processing: if the function is killed mid-way, Telegram's retry
+    #    re-processes it. A rare duplicate row is far cheaper than a lost check-in.
+    msg = data.get("message") or data.get("edited_message") or {}
+    is_private = (msg.get("chat") or {}).get("type") == "private"
+
     if update_id is not None:
         if update_id in _seen_update_ids:
-            print(f"↩️ Duplicate update {update_id} ignored")
+            print(f"↩️ Duplicate update {update_id} ignored (memory)")
+            return Response(status_code=200)
+        if is_private:
+            if not db.try_mark_update_processed(update_id):
+                print(f"↩️ Duplicate update {update_id} ignored (db)")
+                return Response(status_code=200)
+        elif db.is_update_processed(update_id):
+            print(f"↩️ Duplicate update {update_id} ignored (db)")
             return Response(status_code=200)
         _seen_update_ids.add(update_id)
         if len(_seen_update_ids) > 2000:
@@ -562,6 +598,9 @@ async def webhook_handler(request: Request):
 
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
+
+    if update_id is not None and not is_private:
+        db.try_mark_update_processed(update_id)  # mark done only now (see above)
     return Response(status_code=200)
 
 @app.get("/api/webhook")
@@ -572,6 +611,7 @@ async def webhook_test():
 async def cron_handler(request: Request):
     # Verify auth token if needed: if request.headers.get("Authorization") != f"Bearer {config.CRON_SECRET}": return Response(status_code=401)
     application = await get_bot_app()
+    db.cleanup_processed_updates()  # prune dedup rows FIRST — a long report must not starve this
     await auto_daily_report(application)
     return {"status": "success"}
 
