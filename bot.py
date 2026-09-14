@@ -24,7 +24,7 @@ from telegram.ext import (
 import config
 import database_supabase as db
 import i18n
-from analytics import generate_daily_text_summary, generate_weekly_stats
+from analytics import generate_daily_text_summary
 from export import (
     generate_export,
     generate_weekly_export,
@@ -240,26 +240,21 @@ async def cmd_summary(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await send_long_message(ctx.bot, update.effective_chat.id, text, parse_mode="Markdown")
 
 async def cmd_weekly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Same clean flow as /monthly — one Excel matrix, for the last 7 days."""
     if not await _is_admin(update.effective_user.id): return
-    today = _now().strftime("%Y-%m-%d")
-    await update.message.reply_text(i18n.WEEKLY_GENERATING)
-
-    # 1. Compact text overview (quick glance in chat)
-    text = generate_weekly_stats(today)
-    await send_long_message(ctx.bot, update.effective_chat.id, text, parse_mode="Markdown")
-
-    # 2. Full Excel with every check-in time per day
+    end = _now().strftime("%Y-%m-%d")
+    start = (_now() - timedelta(days=6)).strftime("%Y-%m-%d")
+    await update.message.reply_text(f"{i18n.WEEKLY_GENERATING}\n📅 {start} → {end}")
     try:
-        filepath = generate_weekly_export(today)
+        filepath = generate_weekly_export(end)
         with open(filepath, "rb") as doc:
             await ctx.bot.send_document(
-                chat_id=update.effective_chat.id,
-                document=doc,
-                filename=f"weekly_{today}.xlsx",
+                chat_id=update.effective_chat.id, document=doc,
+                filename=f"weekly_{end}.xlsx",
             )
     except Exception as e:
         logger.error(f"Weekly export failed: {e}")
-        await update.message.reply_text("⚠️ Не удалось создать Excel-файл недельного отчёта.")
+        await update.message.reply_text("⚠️ Не удалось создать недельный отчёт.")
 
 async def cmd_monthly(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _is_admin(update.effective_user.id): return
